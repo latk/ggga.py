@@ -7,7 +7,12 @@ from skopt.learning.gaussian_process.kernels import (  # type: ignore
         ConstantKernel, Matern, WhiteKernel)
 import scipy.stats  # type: ignore
 import typing as t
+import asyncio
 from .space import Param, Real, Integer, Space  # noqa: F401 (public reexport)
+
+
+def _fork_random_state(rng):
+    return RandomState(rng.randint(2**32 - 1))
 
 
 class SurrogateModel(object):
@@ -48,7 +53,7 @@ class SurrogateModel(object):
             normalize_y=True,
             noise=0,
             n_restarts_optimizer=2,
-            random_state=RandomState(rng.randint(2**32 - 1)),
+            random_state=_fork_random_state(rng),
         )
 
         estimator.fit([space.into_transformed(x) for x in xs], ys)
@@ -111,8 +116,8 @@ def expected_improvement(mean, std, fmin):
     return -ei
 
 
-def minimize(
-    objective: t.Callable[[list, RandomState], float],
+async def minimize(
+    objective: t.Callable[[list, RandomState], t.Awaitable[float]],
     *,
     space: Space,
     popsize: int=10,
@@ -136,8 +141,11 @@ def minimize(
     all_evaluations = []
     all_models = []
 
-    for ind in population:
-        ind.fitness = objective(ind.sample, rng)
+    population_fitness = await asyncio.gather(*(
+        objective(ind.sample, _fork_random_state(rng))
+        for ind in population))
+    for ind, fitness in zip(population, population_fitness):
+        ind.fitness = fitness
         all_evaluations.append(ind)
     logger.record_evaluations(population, space=space)
 
@@ -183,8 +191,11 @@ def minimize(
             offspring.append(Individual(candidate_sample, None))
 
         # evaluate new individuals
-        for ind in offspring:
-            ind.fitness = objective(ind.sample, rng)
+        offspring_fitness = await asyncio.gather(*(
+            objective(ind.sample, _fork_random_state(rng))
+            for ind in offspring))
+        for ind, fitness in zip(offspring, offspring_fitness):
+            ind.fitness = fitness
             all_evaluations.append(ind)
         logger.record_evaluations(offspring, space=space)
 
