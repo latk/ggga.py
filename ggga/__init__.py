@@ -74,11 +74,15 @@ class SurrogateModel(object):
             for sample in multiple_samples)
         return mean, std
 
-    def predict_transformed_a(self, multiple_transformed_samples: t.Iterable):
+    def predict_transformed_a(
+        self,
+        multiple_transformed_samples: t.Iterable,
+        return_std: bool=True,
+    ):
         if not isinstance(multiple_transformed_samples, (list, np.ndarray)):
             multiple_transformed_samples = list(multiple_transformed_samples)
         return self.estimator.predict(
-            multiple_transformed_samples, return_std=True)
+            multiple_transformed_samples, return_std=return_std)
 
 
 class Logger(object):
