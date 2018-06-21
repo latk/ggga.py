@@ -2,13 +2,19 @@
 
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
-from skopt.learning import GaussianProcessRegressor  # type: ignore
-from skopt.learning.gaussian_process.kernels import (  # type: ignore
-        ConstantKernel, Matern, WhiteKernel)
+from sklearn.gaussian_process.gpr import (  # type: ignore
+    GaussianProcessRegressor)
+from sklearn.gaussian_process.kernels import (  # type: ignore
+    ConstantKernel, Matern, WhiteKernel, Sum, Product)
 import scipy.stats  # type: ignore
 import typing as t
 import asyncio
 from .space import Param, Real, Integer, Space  # noqa: F401 (public reexport)
+from scipy.linalg import solve_triangular, cho_solve  # type: ignore
+import warnings
+
+# large parts of this code are “borrowed” from skopt (scikit-optimize),
+# see https://github.com/scikit-optimize/scikit-optimize
 
 
 def _fork_random_state(rng):
@@ -49,14 +55,42 @@ class SurrogateModel(object):
             nu=5/2)
         noise = WhiteKernel(1.0, (1e-3, 1e4))
         estimator = GaussianProcessRegressor(
-            kernel=amplitude * kernel + noise,
+            kernel=Sum(Product(amplitude, kernel), noise),
             normalize_y=True,
-            noise=0,
             n_restarts_optimizer=2,
+            alpha=1e-10,
+            optimizer="fmin_l_bfgs_b",
+            copy_X_train=True,
             random_state=_fork_random_state(rng),
         )
 
         estimator.fit([space.into_transformed(x) for x in xs], ys)
+
+        # find the WhiteKernel params and turn it off for prediction
+
+        def param_for_white_kernel_in_sum(kernel, kernel_str=""):
+            if kernel_str:
+                kernel_str += '__'
+            if isinstance(kernel, Sum):
+                for param, child in kernel.get_params(deep=False).items():
+                    if isinstance(child, WhiteKernel):
+                        return kernel_str + param
+                    child_str = param_for_white_kernel_in_sum(
+                        child, kernel_str + param)
+                    if child_str is not None:
+                        return child_str
+            return None
+
+        white_kernel_param = param_for_white_kernel_in_sum(estimator.kernel_)
+        if white_kernel_param is not None:
+            estimator.kernel_.set_params(**{
+                white_kernel_param: WhiteKernel(noise_level=0.0)})
+
+        # Precompute arrays needed at prediction
+        L_inv = solve_triangular(estimator.L_.T, np.eye(estimator.L_.shape[0]))
+        estimator.K_inv_ = L_inv.dot(L_inv.T)
+
+        estimator.y_train_mean_ = estimator._y_train_mean
 
         return cls(
             estimator,
@@ -75,14 +109,46 @@ class SurrogateModel(object):
         return mean, std
 
     def predict_transformed_a(
-        self,
-        multiple_transformed_samples: t.Iterable,
+        self, X: t.Iterable, *,
         return_std: bool=True,
+        return_cov: bool=False,
     ):
-        if not isinstance(multiple_transformed_samples, (list, np.ndarray)):
-            multiple_transformed_samples = list(multiple_transformed_samples)
-        return self.estimator.predict(
-            multiple_transformed_samples, return_std=return_std)
+        if not isinstance(X, (list, np.ndarray)):
+            X = list(X)
+        X = np.array(X)
+
+        estimator = self.estimator
+        kernel = estimator.kernel_
+        alpha = estimator.alpha_
+
+        K_trans = kernel(X, estimator.X_train_)
+        y_mean = K_trans.dot(alpha)
+        y_mean = estimator.y_train_mean_ + y_mean  # undo normalization
+
+        if return_cov:
+            assert not return_std
+            v = cho_solve((estimator.L_, True), K_trans.T)
+            y_cov = kernel(X) - K_trans.dot(v)
+            return y_mean, y_cov
+
+        elif return_std:
+            K_inv = estimator.K_inv_
+
+            # Compute variance of predictive distribution
+            y_var = kernel.diag(X)
+            y_var -= np.einsum("ki,kj,ij->k", K_trans, K_trans, K_inv)
+
+            # Check if any of the variances is negative because of
+            # numerical issues. If yes: set the variance to 0.
+            y_var_negative = y_var < 0
+            if np.any(y_var_negative):
+                warnings.warn("Predicted variances smaller than 0. "
+                              "Setting those variances to 0.")
+                y_var[y_var_negative] = 0.0
+            y_std = np.sqrt(y_var)
+            return y_mean, y_std
+
+        return y_mean
 
 
 class Logger(object):
