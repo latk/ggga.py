@@ -19,7 +19,7 @@ class Param(abc.ABC, t.Generic[T]):
         self.flag = flag
 
     @abc.abstractmethod
-    def sample(self, *, rng: RandomState) -> T:
+    def sample(self, *, rng: RandomState, lo=None, hi=None) -> T:
         pass
 
     @abc.abstractmethod
@@ -46,15 +46,41 @@ class Param(abc.ABC, t.Generic[T]):
     def from_transformed(self, value) -> T:
         pass
 
+    def into_transformed_a(self, values: list) -> list:
+        return [self.into_transformed(x) for x in values]
+
+    def from_transformed_a(self, values: list) -> list:
+        return [self.from_transformed(x) for x in values]
+
+    @abc.abstractmethod
+    def transformed_bounds(self) -> tuple:
+        pass
+
 
 class Integer(Param[int]):
+    lo: int
+    hi: int
+
     def __init__(self, name, flag, lo, hi):
         super().__init__(name, flag)
         self.lo = lo
         self.hi = hi
 
-    def sample(self, *, rng: RandomState) -> int:
-        return rng.randint(self.lo, self.hi + 1)
+    def sample(
+        self, *,
+        rng: RandomState,
+        lo: int=None,
+        hi: int=None,
+    ) -> int:
+        if lo is None:
+            lo = self.lo
+        else:
+            assert self.lo <= lo
+        if hi is None:
+            hi = self.hi
+        else:
+            assert hi <= self.hi
+        return rng.randint(lo, hi + 1)
 
     def mutate(self, value, *, rng: RandomState, relscale: float) -> int:
         retries = 20
@@ -82,15 +108,35 @@ class Integer(Param[int]):
     def from_transformed(self, value: float) -> int:
         return int(np.round(value * self.size + self.lo))
 
+    def transformed_bounds(self) -> t.Tuple[float, float]:
+        return (0.0, 1.0)
+
 
 class Real(Param[float]):
+    lo: float
+    hi: float
+
     def __init__(self, name, flag, lo, hi):
         super().__init__(name, flag)
         self.lo = lo
         self.hi = hi
 
-    def sample(self, *, rng: RandomState) -> float:
-        return rng.random_sample() * self.size + self.lo
+    def sample(
+        self, *,
+        rng: RandomState,
+        lo: float=None,
+        hi: float=None,
+    ) -> float:
+        if lo is None:
+            lo = self.lo
+        else:
+            assert self.lo <= lo
+        if hi is None:
+            hi = self.hi
+        else:
+            assert hi <= self.hi
+        size = hi - lo
+        return rng.random_sample() * size + lo
 
     def mutate(self, value, *, rng: RandomState, relscale: float) -> float:
         retries = 20
@@ -118,17 +164,28 @@ class Real(Param[float]):
     def from_transformed(self, value: float) -> float:
         return value * self.size + self.lo
 
+    def transformed_bounds(self) -> t.Tuple[float, float]:
+        return (0.0, 1.0)
+
 
 class Space(object):
-    def __init__(self, *params: Param, constraints=None) -> None:
+    def __init__(
+        self, *params: Param,
+        constraints: t.List[t.Callable[[list], bool]]=None,
+        constrained_bounds_suggestions: t.List[t.Callable[[list], dict]]=None,
+    ) -> None:
         if constraints is None:
             constraints = []
+        if constrained_bounds_suggestions is None:
+            constrained_bounds_suggestions = []
 
         assert all(isinstance(p, Param) for p in params)
         assert all(callable(c) for c in constraints)
+        assert all(callable(s) for s in constrained_bounds_suggestions)
 
         self.params = params
         self.constraints = constraints
+        self.constrained_bounds_suggestions = constrained_bounds_suggestions
 
     @property
     def n_dims(self) -> int:
@@ -136,10 +193,36 @@ class Space(object):
 
     def sample(self, *, rng: RandomState) -> list:
         retries = 10
+        bounds: t.Dict[str, tuple] = dict()
+
+        def merge_lo_hi(llo, lhi, rlo, rhi):
+            if   llo is None:   lo = rlo            # noqa
+            elif rlo is None:   lo = llo            # noqa
+            else:               lo = max(llo, rlo)  # noqa
+
+            if   lhi is None:   hi = rhi            # noqa
+            elif rhi is None:   hi = lhi            # noqa
+            else:               hi = min(lhi, rhi)  # noqa
+
+            if lo is not None and hi is not None:
+                assert lo <= hi
+            return lo, hi
+
         for _ in range(retries):
-            s = [p.sample(rng=rng) for p in self.params]
+            s = []
+            for param in self.params:
+                lo, hi = bounds.get(param.name, (None, None))
+                s.append(param.sample(rng=rng, lo=lo, hi=hi))
             if all(c(s) for c in self.constraints):
                 return s
+            for suggestion in self.constrained_bounds_suggestions:
+                for k, v in suggestion(s).items():
+                    if v is None:
+                        continue
+                    llo, lhi = bounds.get(k, (None, None))
+                    rlo, rhi = v
+                    bounds[k] = merge_lo_hi(llo, lhi, rlo, rhi)
+
         raise RuntimeError("Could not find valid sample")
 
     def mutate(self, sample: list, *,
@@ -214,11 +297,16 @@ class SurrogateModel(object):
         return mean[0], std[0]
 
     def predict_a(self, multiple_samples: list):
-        mean, std = self.estimator.predict(
-            [self.space.into_transformed(sample)
-                for sample in multiple_samples],
-            return_std=True)
+        mean, std = self.predict_transformed_a(
+            self.space.into_transformed(sample)
+            for sample in multiple_samples)
         return mean, std
+
+    def predict_transformed_a(self, multiple_transformed_samples: t.Iterable):
+        if not isinstance(multiple_transformed_samples, (list, np.ndarray)):
+            multiple_transformed_samples = list(multiple_transformed_samples)
+        return self.estimator.predict(
+            multiple_transformed_samples, return_std=True)
 
 
 class Logger(object):
@@ -279,6 +367,7 @@ def minimize(
     ]
 
     all_evaluations = []
+    all_models = []
 
     for ind in population:
         ind.fitness = objective(ind.sample, rng)
@@ -289,6 +378,7 @@ def minimize(
         [ind.sample for ind in all_evaluations],
         [ind.fitness for ind in all_evaluations],
         space=space, rng=rng)
+    all_models.append(model)
 
     def suggest_next_candidate(
         parent_sample, *, relscale, fmin, rng, breadth, model,
@@ -336,6 +426,7 @@ def minimize(
             [ind.sample for ind in all_evaluations],
             [ind.fitness for ind in all_evaluations],
             space=space, rng=rng)
+        all_models.append(model)
 
         # select new population
         selected = []
@@ -346,21 +437,35 @@ def minimize(
                 a, b = b, a
             selected.append(a)
             rejected.append(b)
-        selected = [
-            selected[i] for i in np.argsort([ind.fitness for ind in selected])
-        ]
 
         # replace worst selected elements
         replace_worst_n = popsize - 3
         replacement_locations = \
             np.argsort([ind.fitness for ind in rejected])[:replace_worst_n]
-        for i, j in zip(worst_locations, replacement_locations):
-            selected[i] = rejected[j]
+        selected.extend(rejected[i] for i in replacement_locations)
+        selected = sorted(selected, key=lambda ind: ind.fitness)[:popsize]
 
         population = selected
 
-    best_i = np.argmin([ind.fitness for ind in population])
-    return population[best_i].sample, population[best_i].fitness
+    best_individual = \
+        population[np.argmin([ind.fitness for ind in population])]
+    return best_individual.sample, best_individual.fitness, OptimizationResult(
+        all_evaluations=all_evaluations,
+        best_individual=best_individual,
+        all_models=all_models,
+    )
+
+
+class OptimizationResult(object):
+    def __init__(
+        self, *,
+        all_evaluations,
+        best_individual,
+        all_models,
+    ) -> None:
+        self.all_individuals = all_evaluations
+        self.best_individual = best_individual
+        self.all_models = all_models
 
 
 def tabularize(
