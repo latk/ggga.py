@@ -49,6 +49,9 @@ class Param(abc.ABC, t.Generic[T]):
     def transformed_bounds(self) -> tuple:
         pass
 
+    def bounds(self) -> t.Optional[t.Tuple[T, T]]:
+        return None
+
 
 class Integer(Param[int]):
     lo: int
@@ -103,6 +106,9 @@ class Integer(Param[int]):
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
         return (0.0, 1.0)
+
+    def bounds(self) -> t.Tuple[int, int]:
+        return self.lo, self.hi
 
 
 class Real(Param[float]):
@@ -159,6 +165,9 @@ class Real(Param[float]):
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
         return (0.0, 1.0)
+
+    def bounds(self) -> t.Tuple[float, float]:
+        return self.lo, self.hi
 
 
 class Space(object):

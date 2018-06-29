@@ -81,10 +81,10 @@ class SurrogateModel(object):
                         return child_str
             return None
 
-        white_kernel_param = param_for_white_kernel_in_sum(estimator.kernel_)
-        if white_kernel_param is not None:
-            estimator.kernel_.set_params(**{
-                white_kernel_param: WhiteKernel(noise_level=0.0)})
+        # white_kernel_param = param_for_white_kernel_in_sum(estimator.kernel_)
+        # if white_kernel_param is not None:
+        #     estimator.kernel_.set_params(**{
+        #         white_kernel_param: WhiteKernel(noise_level=0.0)})
 
         # Precompute arrays needed at prediction
         L_inv = solve_triangular(estimator.L_.T, np.eye(estimator.L_.shape[0]))
