@@ -33,12 +33,78 @@ class Logger(object):
 
 
 class Individual(object):
-    sample: list
-    fitness: float
+    def __init__(
+        self, sample: list, *,
+        fitness: float = None,
+        gen: int = None,
+        ei: float = None,
+        prediction: float = None,
+    ) -> None:
 
-    def __init__(self, sample, fitness):
-        self.sample = sample
-        self.fitness = fitness
+        self._sample = sample
+
+        self._fitness = fitness
+        self._gen = gen
+        self._ei = ei
+        self._prediction = prediction
+
+    def __repr__(self):
+        return 'Individual({} [{}] prediction: {} ei: {} gen: {})'.format(
+            self._fitness,
+            ' '.join(repr(x) for x in self._sample),
+            self._prediction,
+            self._ei,
+            self._gen)
+
+    @property
+    def sample(self) -> list:
+        return self._sample
+
+    @property
+    def fitness(self) -> float:
+        assert self._fitness is not None
+        return self._fitness
+
+    @fitness.setter
+    def fitness(self, value: float) -> None:
+        assert self._fitness is None
+        self._fitness = value
+
+    @property
+    def gen(self) -> int:
+        assert self._gen is not None
+        return self._gen
+
+    @gen.setter
+    def gen(self, value: int) -> None:
+        assert self._gen is None
+        self._gen = value
+
+    @property
+    def ei(self) -> float:
+        assert self._ei is not None
+        return self._ei
+
+    @ei.setter
+    def ei(self, value: float) -> None:
+        assert self._ei is None
+        self._ei = value
+
+    @property
+    def prediction(self) -> float:
+        assert self._prediction is not None
+        return self._prediction
+
+    @prediction.setter
+    def prediction(self, value: float) -> None:
+        assert self._prediction is None
+        self._prediction = value
+
+    def is_fully_initialized(self) -> bool:
+        return (self._fitness is not None and
+                self._gen is not None and
+                self._ei is not None and
+                self._prediction is not None)
 
 
 def expected_improvement(mean, std, fmin):
@@ -57,6 +123,8 @@ class OptimizationResult(object):
         all_models: t.List[SurrogateModel],
         duration: float,
     ) -> None:
+        assert all(ind.is_fully_initialized() for ind in all_individuals)
+
         self.all_individuals = all_individuals
         self.best_individual = min(
             all_individuals, key=lambda ind: ind.fitness)
@@ -68,37 +136,39 @@ class OptimizationResult(object):
 
 
 def suggest_next_candidate(
-    parent_sample, *, relscale, fmin, rng, breadth, model, space,
-) -> t.Tuple[list, float]:
+    parent: Individual, *,
+    relscale: float, fmin: float, breadth: int,
+    rng: RandomState, model: SurrogateModel, space: Space,
+) -> Individual:
     candidate_samples = [
-        space.mutate(parent_sample, relscale=relscale, rng=rng)
+        space.mutate(parent.sample, relscale=relscale, rng=rng)
         for _ in range(breadth)]
     candidate_mean, candidate_std = model.predict_a(candidate_samples)
-    candidate_ei = expected_improvement(
-        candidate_mean, candidate_std, fmin)
-    candidate_index = np.argmax(candidate_ei)
-    return (candidate_samples[candidate_index],
-            candidate_ei[candidate_index])
+    candidate_ei = expected_improvement(candidate_mean, candidate_std, fmin)
+    i = np.argmax(candidate_ei)
+    return Individual(
+        candidate_samples[i],
+        prediction=candidate_mean[i],
+        ei=candidate_ei[i])
 
 
 def suggest_next_candidate_a(
-    parent_samples, *, relscale, fmin, rng, breadth, model, space,
-) -> t.Tuple[t.List[list], t.List[float]]:
-    samples: t.List[list] = t.cast(list, [None] * len(parent_samples))
-    eis: t.List[float] = t.cast(list, [None] * len(parent_samples))
-    for i in range(len(parent_samples)):
-        samples[i], eis[i] = suggest_next_candidate(
-            parent_samples[i],
+    parents: t.List[Individual], *,
+    relscale: float, fmin: float, breadth: int,
+    rng: RandomState, model: SurrogateModel, space: Space,
+) -> t.List[Individual]:
+    return [
+        suggest_next_candidate(
+            parent,
             relscale=relscale, fmin=fmin, rng=rng,
             breadth=breadth, model=model, space=space)
-    return samples, eis
+        for parent in parents]
 
 
 def improve_through_random_replacement(
-    offspring_samples: t.List[list],
+    offspring: t.List[Individual],
     *,
-    offspring_ei: t.List[float],
-    offspring_ey: t.Optional[t.List[float]],
+    hedge_via_prediction: bool = True,
     model: SurrogateModel,
     space: Space,
     fmin: float,
@@ -108,57 +178,51 @@ def improve_through_random_replacement(
     n_suggestion_breadth: int = 5,
     relscale_initial: float = 0.1,
     relscale_attenuation: float = 0.5,
-) -> t.Iterable[list]:
+) -> t.Iterable[Individual]:
 
-    # rr = random replacement
-    rr_samples = [space.sample(rng=rng) for _ in range(n_replacements)]
-    rr_ei = [0.0] * n_replacements
+    replacements = [
+        Individual(space.sample(rng=rng)) for _ in range(n_replacements)]
 
     assert n_suggestion_iters > 0
     for i in range(n_suggestion_iters):
         relscale = relscale_initial * relscale_attenuation**i
-        rr_samples, rr_ei = suggest_next_candidate_a(
-            rr_samples,
+        replacements = suggest_next_candidate_a(
+            replacements,
             relscale=relscale, fmin=fmin,
-            rng=rng, model=model, space=space,
-            breadth=n_suggestion_breadth)
-
-    if offspring_ey is not None:
-        rr_ey = model.predict_a(rr_samples, return_std=False)
+            breadth=n_suggestion_breadth,
+            rng=rng, model=model, space=space)
 
     # indices will be popped from the queue worst to best
-    rr_index_queue = list(np.argsort(rr_ei)[::-1])
+    replacements = sorted(replacements, key=lambda ind: ind.ei, reverse=True)
+
+    def metropolis_select(rng, ratio):
+        return ratio > rng.rand()
 
     # search offspring from worst to best
-    for offspring_i in np.argsort(offspring_ei):
-        current_ei = offspring_ei[offspring_i]
-
-        current_ey = None
-        if offspring_ey is not None:
-            current_ey = offspring_ey[offspring_i]
-
-        replacement_i = None
-        while rr_index_queue:
-            replacement_i = rr_index_queue.pop()
+    for current in sorted(offspring, key=lambda ind: ind.ei):
+        replacement = None
+        while replacements:
+            replacement = replacements.pop()
 
             # Simple Metropolis sampling:
             # Always accept replacement if replacement is better (ratio > 1).
             # Otherwise, accept with probability equal to the ratio.
-            if rr_ei[replacement_i] / current_ei > rng.rand():
+            if metropolis_select(rng, replacement.ei / current.ei):
                 break
 
             # Hedge against greedy EI by Metropolis-sampling on the prediction.
             # Always accept if replacement is twice as good.
-            if current_ey is not None:
-                if current_ey / rr_ey[replacement_i] / 2 > rng.rand():
-                    break
+            if hedge_via_prediction and metropolis_select(
+                rng, current.prediction / replacement.prediction / 2,
+            ):
+                break
 
-            replacement_i = None  # reset if failed
+            replacement = None  # reset if failed
 
-        if replacement_i is not None:
-            yield rr_samples[replacement_i]
+        if replacement is not None:
+            yield replacement
         else:
-            yield offspring_samples[offspring_i]
+            yield current
 
 
 async def minimize(
@@ -182,10 +246,7 @@ async def minimize(
 
     start_time = time.time()
 
-    population = [
-        Individual(space.sample(rng=rng), None)
-        for _ in range(popsize)
-    ]
+    population = [Individual(space.sample(rng=rng)) for _ in range(popsize)]
 
     all_evaluations = []
     all_models = []
@@ -195,6 +256,10 @@ async def minimize(
         for ind in population))
     for ind, fitness in zip(population, population_fitness):
         ind.fitness = fitness
+        ind.prediction = 0.0
+        ind.ei = 0.0
+        ind.gen = 0
+        assert ind.is_fully_initialized(), repr(ind)
         all_evaluations.append(ind)
     logger.record_evaluations(population, space=space)
 
@@ -205,7 +270,7 @@ async def minimize(
     all_models.append(model)
 
     generation = 0
-    fmin = min(ind.fitness for ind in all_evaluations)
+    fmin: float = min(ind.fitness for ind in all_evaluations)
     while len(all_evaluations) < max_nevals:
         generation += 1
         relscale = relscale_initial * (relscale_attenuation**(generation - 1))
@@ -214,14 +279,12 @@ async def minimize(
             generation, model=model, relscale=relscale)
 
         # generate new individuals
-        offspring_samples: t.List[list] = \
-            [ind.sample for ind in population]
-        offspring_ei: t.List[float] = []
+        offspring = population
         candidate_chain_length = 1
         assert candidate_chain_length > 0
         for i in range(candidate_chain_length):
-            offspring_samples, offspring_ei = suggest_next_candidate_a(
-                offspring_samples,
+            offspring = suggest_next_candidate_a(
+                offspring,
                 relscale=relscale * (relscale_attenuation ** i),
                 fmin=fmin,
                 rng=rng,
@@ -233,16 +296,10 @@ async def minimize(
         # Guard against premature convergence
         # by replacing worst estimated offspring with random individuals.
         # This is not completely random, but controlled by Metropolis sampling.
-        offspring = [
-            Individual(sample, None)
-            for sample in improve_through_random_replacement(
-                offspring_samples,
-                offspring_ei=offspring_ei,
-                offspring_ey=model.predict_a(
-                    offspring_samples, return_std=False),
-                model=model, space=space, fmin=fmin, rng=rng,
-                n_replacements=popsize)
-        ]
+        offspring = list(improve_through_random_replacement(
+            offspring,
+            model=model, space=space, fmin=fmin, rng=rng,
+            n_replacements=popsize))
 
         # evaluate new individuals
         offspring_fitness = await asyncio.gather(*(
@@ -250,6 +307,8 @@ async def minimize(
             for ind in offspring))
         for ind, fitness in zip(offspring, offspring_fitness):
             ind.fitness = fitness
+            ind.gen = generation
+            assert ind.is_fully_initialized(), repr(ind)
             all_evaluations.append(ind)
         logger.record_evaluations(offspring, space=space)
 
