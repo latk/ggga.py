@@ -17,9 +17,10 @@ class Logger(object):
         param_formats = \
             ['{:.5f}' if isinstance(p, Real) else '{}' for p in space.params]
         print(tabularize(
-            header=['utility', *param_names],
-            formats=['{:.2f}', *param_formats],
-            data=[[ind.fitness, *ind.sample] for ind in individuals],
+            header=['utility', 'prediction', 'ei', *param_names],
+            formats=['{:.2f}', '{:.2f}', '{:.2e}', *param_formats],
+            data=[[ind.fitness, ind.prediction, ind.ei, *ind.sample]
+                  for ind in individuals],
         ))
 
     def announce_new_generation(

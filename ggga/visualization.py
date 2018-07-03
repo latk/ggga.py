@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt  # type: ignore
+import seaborn as sns  # type: ignore
 import numpy as np  # type: ignore
 from concurrent.futures import ProcessPoolExecutor
 import typing as t
 import functools
+from .minimize import Individual
 
 from . import SurrogateModel, Space
 
@@ -55,7 +57,7 @@ async def plot_objective(
     subplot_size: float=2,
     rng: np.random.RandomState,
     cmap='viridis_r',
-):
+) -> t.Tuple[t.Any, t.Any]:
     n_dims = space.n_dims
 
     samples_transformed = [
@@ -176,3 +178,50 @@ def plot_dual_variable_dependence(
         ax.tick_params('x', top=False, bottom=False, labelbottom=False)
     if not show_yticks:
         ax.tick_params('y', left=False, right=False, labelleft=False)
+
+
+def plot_convergence(all_evaluations: t.List[Individual]):
+    # find the minimum at each generation
+    n_generations = max(ind.gen for ind in all_evaluations)
+    ind_by_generation: t.List[t.List[Individual]] = \
+        [[] for _ in range(n_generations + 1)]
+    for ind in all_evaluations:
+        ind_by_generation[ind.gen].append(ind)
+
+    prev_min_fitness = np.inf
+    min_fitness = []
+    for generation in ind_by_generation:
+        f = min(ind.fitness for ind in generation)
+        prev_min_fitness = min(prev_min_fitness, f)
+        min_fitness.append(prev_min_fitness)
+
+    fig, (utility_ax, ei_ax) = plt.subplots(2, 1, sharex=True)
+    palette = sns.color_palette('husl')
+
+    # utility/fitness plot
+    sns.stripplot(
+        x=[ind.gen for ind in all_evaluations],
+        y=[ind.fitness for ind in all_evaluations],
+        jitter=True,
+        ax=utility_ax,
+        palette=palette,
+    )
+
+    # min-fitness plot
+    utility_ax.plot(
+        list(range(len(min_fitness))),
+        min_fitness,
+        color='blue',
+    )
+
+    # EI plot
+    sns.stripplot(
+        x=[ind.gen for ind in all_evaluations],
+        y=[ind.ei for ind in all_evaluations],
+        jitter=True,
+        ax=ei_ax,
+        palette=palette,
+    )
+    ei_ax.set_yscale('log')  # EI can be very small
+
+    return fig, (utility_ax, ei_ax)
