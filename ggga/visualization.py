@@ -1,9 +1,7 @@
 import matplotlib.pyplot as plt  # type: ignore
 import seaborn as sns  # type: ignore
 import numpy as np  # type: ignore
-from concurrent.futures import ProcessPoolExecutor
 import typing as t
-import functools
 from .minimize import Individual
 
 from . import SurrogateModel, Space
@@ -46,8 +44,8 @@ def partial_dependence(
     return xi_transformed, yi_transformed, np.array(zi).T
 
 
-async def plot_objective(
-    loop, xs, ys, *,
+def plot_objective(
+    xs, ys, *,
     x_min,
     model: SurrogateModel,
     space: Space,
@@ -65,29 +63,6 @@ async def plot_objective(
         for _ in range(n_samples)
     ]
 
-    executor = ProcessPoolExecutor()
-    single_dependence = []
-    dual_dependence: t.List[t.List[t.Awaitable[tuple]]] = []
-
-    for row in range(n_dims):
-        single_dependence.append(loop.run_in_executor(
-            executor, functools.partial(
-                partial_dependence,
-                space, model, row,
-                samples_transformed=samples_transformed,
-                n_points=n_points,
-                rng=rng)))
-
-        dual_dependence.append([])
-        for col in range(row):  # leave upper triangle empty
-            dual_dependence[row].append(loop.run_in_executor(
-                executor, functools.partial(
-                    partial_dependence,
-                    space, model, row, col,
-                    samples_transformed=samples_transformed,
-                    n_points=n_points,
-                    rng=rng)))
-
     fig, ax = plt.subplots(
         n_dims, n_dims, figsize=(subplot_size * n_dims, subplot_size * n_dims))
     fig.subplots_adjust(
@@ -98,7 +73,11 @@ async def plot_objective(
         # plot single-variable dependence on diagonal
         param_row = space.params[row]
         print("[INFO] dependence plot 1D {} ({})".format(row, param_row.name))
-        xi_transformed, yi, stdi = await single_dependence[row]
+        xi_transformed, yi, stdi = partial_dependence(
+            space, model, row,
+            samples_transformed=samples_transformed,
+            n_points=n_points,
+            rng=rng)
         xi = param_row.from_transformed_a(xi_transformed)
         ax_ii = ax[row, row]
         plot_single_variable_dependence(
@@ -114,8 +93,11 @@ async def plot_objective(
             param_col = space.params[col]
             print("[INFO] dependence plot {} x {} ({} x {})".format(
                 row, col, param_row.name, param_col.name))
-            xi_transformed, yi_transformed, zi = \
-                await dual_dependence[row][col]
+            xi_transformed, yi_transformed, zi = partial_dependence(
+                space, model, row, col,
+                samples_transformed=samples_transformed,
+                n_points=n_points,
+                rng=rng)
             xi = param_col.from_transformed_a(xi_transformed)
             yi = param_row.from_transformed_a(yi_transformed)
             ax_ij = ax[row, col]
