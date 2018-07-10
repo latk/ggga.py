@@ -65,9 +65,6 @@ def plot_objective(
 
     fig, ax = plt.subplots(
         n_dims, n_dims, figsize=(subplot_size * n_dims, subplot_size * n_dims))
-    fig.subplots_adjust(
-        left=0.05, right=0.95, bottom=0.05, top=0.95,
-        hspace=0.03, wspace=0.03)
 
     for row in range(n_dims):
         # plot single-variable dependence on diagonal
@@ -113,6 +110,10 @@ def plot_objective(
         for col in range(row + 1, n_dims):
             ax[row, col].axis('off')
 
+    fig.tight_layout()
+    fig.subplots_adjust(
+        # left=0.05, right=0.95, bottom=0.05, top=0.95,
+        hspace=0.03, wspace=0.03)
     return fig, ax
 
 
@@ -206,4 +207,31 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     )
     ei_ax.set_yscale('log')  # EI can be very small
 
+    fig.tight_layout()
     return fig, (utility_ax, ei_ax)
+
+
+def plot_observations_against_model(
+    model: SurrogateModel, all_evaluations: t.List[Individual],
+):
+    fig, ax = plt.subplots()
+    observed_data = np.array([ind.fitness for ind in all_evaluations])
+    modelled_data = model.predict_a(
+        [ind.sample for ind in all_evaluations], return_std=False)
+    # plot the data
+    ax.plot(
+        observed_data, modelled_data,
+        marker='o', alpha=0.5, markersize=10, color='g', ls='')
+    # plot 45° line
+    observed_min, observed_max = np.min(observed_data), np.max(observed_data)
+    modelled_min, modelled_max = np.min(modelled_data), np.max(modelled_data)
+    the_min = min(observed_min, modelled_min)
+    the_max = max(observed_max, modelled_max)
+    ax.plot(
+        [the_min, the_max], [the_min, the_max],
+        marker='', ls='-', color='b')
+    ax.set_xlabel('observed')
+    ax.set_ylabel('predicted')
+
+    fig.tight_layout()
+    return fig
