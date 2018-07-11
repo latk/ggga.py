@@ -30,6 +30,13 @@ class SurrogateModelGPR(SurrogateModel):
         self.ys_min = ys_min
         self.space = space
 
+    def __repr__(self):
+        # return f'SurrogateModelGPR({self.estimator.kernel_})'
+        params = self.estimator.kernel_.get_params()
+        params_as_str = ''.join(f'\n    {key}={value}'
+                                for (key, value) in sorted(params.items()))
+        return f'SurrogateModelGPR({params_as_str})'
+
     @classmethod
     def estimate(
         cls,
@@ -38,19 +45,27 @@ class SurrogateModelGPR(SurrogateModel):
         *,
         space: Space,
         rng: RandomState,
+        prior: 'SurrogateModel',
     ) -> 'SurrogateModelGPR':
         n_dims = space.n_dims
 
-        # TODO adjust amplitude bounds
-        amplitude = ConstantKernel(1.0, (1e-2, 1e3))
-        # TODO adjust length scale bounds
-        kernel = Matern(
-            length_scale=np.ones(n_dims),
-            length_scale_bounds=[(1e-3, 1e3)] * n_dims,
-            nu=5/2)
-        noise = WhiteKernel(1.0, (1e-3, 1e4))
+        if prior is not None:
+            assert isinstance(prior, SurrogateModelGPR)
+            prior_kernel = prior.estimator.kernel_
+        else:
+            # TODO adjust amplitude bounds
+            amplitude = ConstantKernel(1.0, (1e-2, 1e3))
+            # TODO adjust length scale bounds
+            kernel = Matern(
+                length_scale=np.ones(n_dims),
+                length_scale_bounds=[(1e-3, 1e3)] * n_dims,
+                nu=5/2)
+            # noise = WhiteKernel(1.0, (1e-3, 1e4))
+            noise = WhiteKernel(1.0, (1e-3, 1e3))
+            prior_kernel = Sum(Product(amplitude, kernel), noise)
+
         estimator = GaussianProcessRegressor(
-            kernel=Sum(Product(amplitude, kernel), noise),
+            kernel=prior_kernel,
             normalize_y=True,
             n_restarts_optimizer=2,
             alpha=1e-10,

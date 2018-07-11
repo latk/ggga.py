@@ -14,6 +14,7 @@ class SurrogateModel(abc.ABC):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
+        prior: 'SurrogateModel',
     ) -> 'SurrogateModel':
         pass
 

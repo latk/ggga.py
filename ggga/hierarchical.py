@@ -22,18 +22,26 @@ class SurrogateModelHierarchical(SurrogateModel):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
+        prior: SurrogateModel,
         base_model_class: t.Type[SurrogateModel] = None,
         detail_model_class: t.Type[SurrogateModel] = None,
     ) -> 'SurrogateModelHierarchical':
         assert base_model_class is not None
         assert detail_model_class is not None
 
+        base_prior = None
+        detail_prior = None
+        if prior is not None:
+            assert isinstance(prior, SurrogateModelHierarchical)
+            base_prior = prior.base_model
+            detail_prior = prior.detail_model
+
         base_model = base_model_class.estimate(
-            xs, ys, space=space, rng=rng)
+            xs, ys, space=space, rng=rng, prior=base_prior)
         base_prediction = base_model.predict_a(xs, return_std=False)
 
         detail_model = detail_model_class.estimate(
-            xs, ys - base_prediction, space=space, rng=rng)
+            xs, ys - base_prediction, space=space, rng=rng, prior=detail_prior)
 
         return cls(
             base_model,

@@ -17,9 +17,9 @@ class Logger(object):
         param_formats = \
             ['{:.5f}' if isinstance(p, Real) else '{}' for p in space.params]
         print(tabularize(
-            header=['utility', 'prediction', 'ei', *param_names],
-            formats=['{:.2f}', '{:.2f}', '{:.2e}', *param_formats],
-            data=[[ind.fitness, ind.prediction, ind.ei, *ind.sample]
+            header=['utility', 'prediction', 'ei', 'cost', *param_names],
+            formats=['{:.2f}', '{:.2f}', '{:.2e}', '{:.2f}', *param_formats],
+            data=[[ind.fitness, ind.prediction, ind.ei, ind.cost, *ind.sample]
                   for ind in individuals],
         ))
 
@@ -28,9 +28,9 @@ class Logger(object):
         model: SurrogateModel,
         relscale: float,
     ) -> None:
-        print("[INFO] starting generation #{}".format(gen))
-        print("       relscale {:.5f}".format(relscale))
-        print("       estimator: {!r}".format(model))
+        print(f"[INFO] starting generation #{gen}")
+        print(f"       relscale {relscale:.5f}")
+        print(f"       estimator: {model!r}")
 
 
 class Individual(object):
@@ -40,6 +40,7 @@ class Individual(object):
         gen: int = None,
         ei: float = None,
         prediction: float = None,
+        cost: float = None,
     ) -> None:
 
         self._sample = sample
@@ -48,14 +49,19 @@ class Individual(object):
         self._gen = gen
         self._ei = ei
         self._prediction = prediction
+        self._cost = cost
 
     def __repr__(self):
-        return 'Individual({} [{}] prediction: {} ei: {} gen: {})'.format(
-            self._fitness,
-            ' '.join(repr(x) for x in self._sample),
-            self._prediction,
-            self._ei,
-            self._gen)
+        fitness = self._fitness
+        sample = ' '.join(repr(x) for x in self._sample)
+        prediction = self._prediction
+        ei = self._ei
+        gen = self._gen
+        cost = self._cost
+        return (f'Individual({fitness} @{cost:.2f} [{sample}]'
+                f' prediction: {prediction}'
+                f' ei: {ei}'
+                f' gen: {gen})')
 
     @property
     def sample(self) -> list:
@@ -70,6 +76,16 @@ class Individual(object):
     def fitness(self, value: float) -> None:
         assert self._fitness is None
         self._fitness = value
+
+    @property
+    def cost(self) -> float:
+        assert self._cost is not None
+        return self._cost
+
+    @cost.setter
+    def cost(self, value: float) -> None:
+        assert self._cost is None
+        self._cost = value
 
     @property
     def gen(self) -> int:
@@ -102,10 +118,8 @@ class Individual(object):
         self._prediction = value
 
     def is_fully_initialized(self) -> bool:
-        return (self._fitness is not None and
-                self._gen is not None and
-                self._ei is not None and
-                self._prediction is not None)
+        return all(field is not None for field in (
+            self._fitness, self._gen, self._ei, self._prediction, self._cost))
 
 
 def expected_improvement(mean, std, fmin):
@@ -226,8 +240,14 @@ def improve_through_random_replacement(
             yield current
 
 
+Sample = list
+ObjectiveFunction = t.Callable[
+    [Sample, RandomState], t.Awaitable[t.Tuple[float, float]],
+]
+
+
 async def minimize(
-    objective: t.Callable[[list, RandomState], t.Awaitable[float]],
+    objective: ObjectiveFunction,
     *,
     space: Space,
     popsize: int=10,
@@ -236,7 +256,7 @@ async def minimize(
     rng: RandomState,
     relscale_initial=0.3,
     relscale_attenuation=0.9,
-    surrogate_model_class=SurrogateModelGPR,
+    surrogate_model_class: t.Type[SurrogateModel] =SurrogateModelGPR,
     surrogate_model_args: dict=dict(),
 ) -> OptimizationResult:
 
@@ -247,27 +267,40 @@ async def minimize(
 
     start_time = time.time()
 
+    async def evaluate_all(
+        individuals: t.List[Individual], *,
+        rng: RandomState,
+        gen: int,
+    ) -> None:
+        results = await asyncio.gather(*(
+            objective(ind.sample, fork_random_state(rng))
+            for ind in individuals))
+        for ind, (fitness, cost) in zip(individuals, results):
+            ind.fitness = fitness
+            ind.cost = cost
+            ind.gen = gen
+            assert ind.is_fully_initialized(), repr(ind)
+
+    def fit_next_model(all_evaluations, rng, prev_model):
+        return surrogate_model_class.estimate(
+            [ind.sample for ind in all_evaluations],
+            [ind.fitness for ind in all_evaluations],
+            space=space, rng=rng, prior=prev_model, **surrogate_model_args)
+
     population = [Individual(space.sample(rng=rng)) for _ in range(popsize)]
 
     all_evaluations = []
     all_models = []
 
-    population_fitness = await asyncio.gather(*(
-        objective(ind.sample, fork_random_state(rng))
-        for ind in population))
-    for ind, fitness in zip(population, population_fitness):
-        ind.fitness = fitness
-        ind.prediction = 0.0
+    for ind in population:
+        ind.prediction = 0
         ind.ei = 0.0
-        ind.gen = 0
-        assert ind.is_fully_initialized(), repr(ind)
-        all_evaluations.append(ind)
-    logger.record_evaluations(population, space=space)
 
-    model = surrogate_model_class.estimate(
-        [ind.sample for ind in all_evaluations],
-        [ind.fitness for ind in all_evaluations],
-        space=space, rng=rng, **surrogate_model_args)
+    await evaluate_all(population, rng=rng, gen=0)
+    logger.record_evaluations(population, space=space)
+    all_evaluations.extend(population)
+
+    model = fit_next_model(all_evaluations, rng=rng, prev_model=None)
     all_models.append(model)
 
     generation = 0
@@ -303,21 +336,11 @@ async def minimize(
             n_replacements=popsize))
 
         # evaluate new individuals
-        offspring_fitness = await asyncio.gather(*(
-            objective(ind.sample, fork_random_state(rng))
-            for ind in offspring))
-        for ind, fitness in zip(offspring, offspring_fitness):
-            ind.fitness = fitness
-            ind.gen = generation
-            assert ind.is_fully_initialized(), repr(ind)
-            all_evaluations.append(ind)
+        await evaluate_all(offspring, rng=rng, gen=generation)
+        all_evaluations.extend(offspring)
         logger.record_evaluations(offspring, space=space)
 
-        # fit next model
-        model = surrogate_model_class.estimate(
-            [ind.sample for ind in all_evaluations],
-            [ind.fitness for ind in all_evaluations],
-            space=space, rng=rng, **surrogate_model_args)
+        model = fit_next_model(all_evaluations, rng=rng, prev_model=model)
         all_models.append(model)
 
         # select new population

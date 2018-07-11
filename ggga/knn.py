@@ -36,8 +36,10 @@ class SurrogateModelKNN(SurrogateModel):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
+        prior: 'SurrogateModel',
         n_neighbors: int = 10,
     ) -> 'SurrogateModelKNN':
+        assert prior is None or isinstance(prior, SurrogateModelKNN)
         estimator = neighbors.KNeighborsRegressor(
             n_neighbors,
             weights=weights,
