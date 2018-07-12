@@ -46,6 +46,8 @@ class SurrogateModelGPR(SurrogateModel):
         space: Space,
         rng: RandomState,
         prior: 'SurrogateModel',
+        noise_bounds: t.Tuple[float, float] = (1e-3, 1e2)
+        n_restarts_optimizer: int = 10
     ) -> 'SurrogateModelGPR':
         n_dims = space.n_dims
 
@@ -60,14 +62,13 @@ class SurrogateModelGPR(SurrogateModel):
                 length_scale=np.ones(n_dims),
                 length_scale_bounds=[(1e-3, 1e3)] * n_dims,
                 nu=5/2)
-            # noise = WhiteKernel(1.0, (1e-3, 1e4))
-            noise = WhiteKernel(1.0, (1e-3, 1e3))
+            noise = WhiteKernel(1.0, noise_bounds)
             prior_kernel = Sum(Product(amplitude, kernel), noise)
 
         estimator = GaussianProcessRegressor(
             kernel=prior_kernel,
             normalize_y=True,
-            n_restarts_optimizer=2,
+            n_restarts_optimizer=n_restarts_optimizer,
             alpha=1e-10,
             optimizer="fmin_l_bfgs_b",
             copy_X_train=True,

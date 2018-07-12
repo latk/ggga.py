@@ -38,12 +38,14 @@ class SurrogateModelKNN(SurrogateModel):
         rng: RandomState,
         prior: 'SurrogateModel',
         n_neighbors: int = 10,
+        p: int = 2,
     ) -> 'SurrogateModelKNN':
         assert prior is None or isinstance(prior, SurrogateModelKNN)
         estimator = neighbors.KNeighborsRegressor(
             n_neighbors,
             weights=weights,
             algorithm='kd_tree',
+            p=p,
         )
 
         xs_transformed = np.array([space.into_transformed(x) for x in xs])

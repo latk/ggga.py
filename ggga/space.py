@@ -115,10 +115,11 @@ class Real(Param[float]):
     lo: float
     hi: float
 
-    def __init__(self, name, flag, lo, hi):
+    def __init__(self, name, flag, lo, hi, exp=1.0):
         super().__init__(name, flag)
         self.lo = lo
         self.hi = hi
+        self.exp = exp
 
     def sample(
         self, *,
@@ -134,8 +135,11 @@ class Real(Param[float]):
             hi = self.hi
         else:
             assert hi <= self.hi
-        size = hi - lo
-        return rng.random_sample() * size + lo
+        hi_transformed = self.into_transformed(hi)
+        lo_transformed = self.into_transformed(lo)
+        size_transformed = (hi_transformed - lo_transformed)
+        x_transformed = rng.random_sample() * size_transformed + lo_transformed
+        return self.from_transformed(x_transformed)
 
     def mutate(self, value, *, rng: RandomState, relscale: float) -> float:
         retries = 20
@@ -158,10 +162,10 @@ class Real(Param[float]):
         return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: float) -> float:
-        return (value - self.lo) / self.size
+        return ((value - self.lo) / self.size)**self.exp
 
     def from_transformed(self, value: float) -> float:
-        return value * self.size + self.lo
+        return (value * self.size + self.lo)**(1/self.exp)
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
         return (0.0, 1.0)

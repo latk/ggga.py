@@ -9,7 +9,7 @@ from . import SurrogateModel, Space
 
 def partial_dependence(
     space, model, i, j=None, *, samples_transformed, n_points, rng,
-):
+) -> tuple:
     def transformed_bounds_linspace(param, n_points):
         return np.linspace(*param.transformed_bounds(), n_points)
 
@@ -24,7 +24,10 @@ def partial_dependence(
             real_transformed_samples[:, i] = x
             y, std = model.predict_transformed_a(real_transformed_samples)
             yi[n] = np.mean(y)
-            stdi[n] = np.mean(std)
+            # IDEALLY: std(a + b) = sqrt(var(a) + var(b) - cov(a, b))
+            # NOT: mean of stdev
+            # INSTEAD: mean of variance
+            stdi[n] = np.sqrt(np.mean(std**2))
         return xi_transformed, yi, stdi
 
     # two-dimensional case

@@ -62,6 +62,7 @@ class SurrogateModelHierarchical(SurrogateModel):
                 xs, return_std=True)
             detail_ys, detail_std = detail_model.predict_transformed_a(
                 xs, return_std=True)
+            # TODO calculatate sum of stds properly
             return base_ys + detail_ys, base_std + detail_std
 
         base_ys = base_model.predict_transformed_a(
