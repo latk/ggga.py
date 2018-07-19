@@ -1,12 +1,12 @@
-from sklearn.gaussian_process.gpr import (  # type: ignore
-    GaussianProcessRegressor)
 from sklearn.gaussian_process.kernels import (  # type: ignore
-    ConstantKernel, Matern, WhiteKernel, Sum, Product)
-from scipy.linalg import solve_triangular  # type: ignore
+    Kernel, ConstantKernel, Matern, WhiteKernel, Sum, Product)
+import scipy.linalg  # type: ignore
 import warnings
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import typing as t
+import attr
+from sklearn.base import clone  # type: ignore
 
 from .space import Space
 from .util import fork_random_state
@@ -15,26 +15,28 @@ from .surrogate_model import SurrogateModel
 # large parts of this code are “borrowed” from skopt (scikit-optimize),
 # see https://github.com/scikit-optimize/scikit-optimize
 
+TBounds = t.Tuple[float, float]
 
+
+@attr.attrs(repr=False, frozen=True, cmp=False)
 class SurrogateModelGPR(SurrogateModel):
-    def __init__(
-        self,
-        estimator: GaussianProcessRegressor,
-        *,
-        ys_mean: float,
-        ys_min: float,
-        space: Space,
-    ) -> None:
-        self.estimator = estimator
-        self.ys_mean = ys_mean
-        self.ys_min = ys_min
-        self.space = space
+    kernel: Kernel = attr.ib()
+    X_train: np.ndarray = attr.ib()
+    y_train: np.ndarray = attr.ib()
+    alpha: np.ndarray = attr.ib()
+    K_inv: np.ndarray = attr.ib()
+    ys_mean: float = attr.ib()
+    ys_min: float = attr.ib()
+    lml: float = attr.ib()
+    space: Space = attr.ib()
 
     def __repr__(self):
-        # return f'SurrogateModelGPR({self.estimator.kernel_})'
-        params = self.estimator.kernel_.get_params()
+        def all_config_items():
+            yield from self.kernel.get_params().items()
+            yield 'lml', f'{self.lml:.2e}'
+
         params_as_str = ''.join(f'\n    {key}={value}'
-                                for (key, value) in sorted(params.items()))
+                                for (key, value) in sorted(all_config_items()))
         return f'SurrogateModelGPR({params_as_str})'
 
     @classmethod
@@ -46,67 +48,80 @@ class SurrogateModelGPR(SurrogateModel):
         space: Space,
         rng: RandomState,
         prior: 'SurrogateModel',
-        noise_bounds: t.Tuple[float, float] = (1e-3, 1e2)
-        n_restarts_optimizer: int = 10
+        noise_bounds: TBounds = (1e-5, 1e5),
+        amplitude_bounds: TBounds = (1e-5, 1e5),
+        length_scale_bounds: t.Union[TBounds, t.List[TBounds]] = (1e-3, 1e3),
+        n_restarts_optimizer: int = 2,
+        matern_nu: float = 5/2,
     ) -> 'SurrogateModelGPR':
         n_dims = space.n_dims
 
+        start_amplitude = 1.0
+        assert start_amplitude in ClosedInterval(*amplitude_bounds)
+
+        start_noise = 1.0
+        assert start_noise in ClosedInterval(*noise_bounds)
+
+        length_scale = np.ones(n_dims)
+        if isinstance(length_scale_bounds, tuple):
+            length_scale_bounds = [length_scale_bounds] * n_dims
+        assert len(length_scale_bounds) == n_dims
+        assert all(1.0 in ClosedInterval(*dim_bounds)
+                   for dim_bounds in length_scale_bounds)
+
+        ys_mean = np.mean(ys)
+        ys_min = np.min(ys)
+
         if prior is not None:
             assert isinstance(prior, SurrogateModelGPR)
-            prior_kernel = prior.estimator.kernel_
+            kernel = clone(prior.kernel)
         else:
-            # TODO adjust amplitude bounds
-            amplitude = ConstantKernel(1.0, (1e-2, 1e3))
+
+            amplitude = ConstantKernel(start_amplitude, amplitude_bounds)
             # TODO adjust length scale bounds
             kernel = Matern(
-                length_scale=np.ones(n_dims),
-                length_scale_bounds=[(1e-3, 1e3)] * n_dims,
-                nu=5/2)
-            noise = WhiteKernel(1.0, noise_bounds)
-            prior_kernel = Sum(Product(amplitude, kernel), noise)
+                length_scale=length_scale,
+                length_scale_bounds=length_scale_bounds,
+                nu=matern_nu)
+            noise = WhiteKernel(start_noise, noise_bounds)
+            kernel = Sum(Product(amplitude, kernel), noise)
 
-        estimator = GaussianProcessRegressor(
-            kernel=prior_kernel,
-            normalize_y=True,
+        X_train = np.array([space.into_transformed(x) for x in xs])
+        y_train = ys - ys_min
+        relax_alpha = 1e-10
+        lml = fit_kernel(
+            kernel, X_train, y_train,
+            rng=fork_random_state(rng),
             n_restarts_optimizer=n_restarts_optimizer,
-            alpha=1e-10,
-            optimizer="fmin_l_bfgs_b",
-            copy_X_train=True,
-            random_state=fork_random_state(rng),
+            relax_alpha=relax_alpha)
+
+        # precompute matrices for prediction
+        matrices_or_error = calculate_prediction_matrices(
+            X_train, y_train,
+            kernel=kernel,
+            eval_gradient=False,
+            relax_alpha=relax_alpha,
         )
+        if isinstance(matrices_or_error, np.linalg.LinAlgError):
+            exc = matrices_or_error
+            exc.args = (
+                "The kernel did not return a positive definite matrix. "
+                "Please relax the alpha.", *exc.args)
+            raise exc
+        _, L, alpha, _ = matrices_or_error
 
-        estimator.fit([space.into_transformed(x) for x in xs], ys)
-
-        # find the WhiteKernel params and turn it off for prediction
-
-        def param_for_white_kernel_in_sum(kernel, kernel_str=""):
-            if kernel_str:
-                kernel_str += '__'
-            if isinstance(kernel, Sum):
-                for param, child in kernel.get_params(deep=False).items():
-                    if isinstance(child, WhiteKernel):
-                        return kernel_str + param
-                    child_str = param_for_white_kernel_in_sum(
-                        child, kernel_str + param)
-                    if child_str is not None:
-                        return child_str
-            return None
-
-        # white_kernel_param = param_for_white_kernel_in_sum(estimator.kernel_)
-        # if white_kernel_param is not None:
-        #     estimator.kernel_.set_params(**{
-        #         white_kernel_param: WhiteKernel(noise_level=0.0)})
-
-        # Precompute arrays needed at prediction
-        L_inv = solve_triangular(estimator.L_.T, np.eye(estimator.L_.shape[0]))
-        estimator.K_inv_ = L_inv.dot(L_inv.T)
-
-        estimator.y_train_mean_ = estimator._y_train_mean
+        L_inv = scipy.linalg.solve_triangular(L.T, np.eye(L.shape[0]))
+        K_inv = L_inv.dot(L_inv.T)
 
         return cls(
-            estimator,
-            ys_mean=np.mean(ys),
-            ys_min=np.min(ys),
+            kernel,
+            alpha=alpha,
+            K_inv=K_inv,
+            X_train=X_train,
+            y_train=y_train,
+            ys_mean=ys_mean,
+            ys_min=ys_min,
+            lml=lml,
             space=space)
 
     def predict_transformed_a(
@@ -117,20 +132,17 @@ class SurrogateModelGPR(SurrogateModel):
             X = list(X)
         X = np.array(X)
 
-        estimator = self.estimator
-        kernel = estimator.kernel_
-        alpha = estimator.alpha_
+        kernel = self.kernel
+        alpha = self.alpha
 
-        K_trans = kernel(X, estimator.X_train_)
+        K_trans = kernel(X, self.X_train)
         y_mean = K_trans.dot(alpha)
-        y_mean = estimator.y_train_mean_ + y_mean  # undo normalization
+        y_mean += self.ys_min  # undo normalization
 
         if return_std:
-            K_inv = estimator.K_inv_
-
             # Compute variance of predictive distribution
             y_var = kernel.diag(X)
-            y_var -= np.einsum("ki,kj,ij->k", K_trans, K_trans, K_inv)
+            y_var -= np.einsum("ki,kj,ij->k", K_trans, K_trans, self.K_inv)
 
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
@@ -146,3 +158,175 @@ class SurrogateModelGPR(SurrogateModel):
 
     def __str__(self):
         return str(self.estimator.kernel_)
+
+
+@attr.s(frozen=True)
+class ClosedInterval(object):
+    lo: float = attr.ib()
+    hi: float = attr.ib()
+
+    def __contains__(self, x: float) -> bool:
+        return self.lo <= x <= self.hi
+
+
+def fit_kernel(
+    kernel: Kernel,
+    X: np.ndarray,
+    y: np.ndarray, *,
+    rng: RandomState,
+    n_restarts_optimizer: int,
+    relax_alpha: float = 0.0,
+) -> float:
+    """Assign kernel parameters with maximal log-marginal-likelihood.
+
+    Parameters
+    ----------
+    kernel
+        The prior kernel to tune.
+        The current parameters (theta)
+        are used as an optimization starting point.
+        All parameter bounds must be finite.
+        The kernel is modified in-place.
+    X, y
+        Supporting input observations, already transformed and normalized-
+    rng
+        Used to select additional optimizer start points.
+    n_restarts_optimizer
+        Number of additional starting points.
+    relax_alpha
+        Added to the covariance matrix diagonal
+        to relax the matrix manipulation, should be unnecessary.
+        Corresponds to adding a WhiteKernel.
+
+    Returns
+    -------
+    The log marginal likelihood of the selected theta.
+    """
+
+    def obj_func(theta: np.ndarray, eval_gradient: bool = True):
+        return log_marginal_likelihood(
+            theta, eval_gradient=eval_gradient,
+            kernel=kernel, X=X, y=y, relax_alpha=relax_alpha)
+
+    bounds = kernel.bounds
+
+    # start optimizing from prior kernel
+    optimal_theta, optimal_lml = minimize(obj_func, kernel.theta, bounds)
+
+    # add more restarts
+    for _ in range(n_restarts_optimizer):
+        theta_prior = rng.uniform(bounds[:, 0], bounds[:, 1])
+        theta_posterior, lml = minimize(obj_func, theta_prior, bounds)
+        if lml < optimal_lml:  # minimize the lml
+            optimal_theta, optimal_lml = theta_posterior, lml
+
+    # select result with minimal (negative) log-marginal likelihood
+    kernel.theta = optimal_theta
+    return -optimal_lml
+
+
+def log_marginal_likelihood(
+    theta: np.ndarray,
+    eval_gradient: bool = False,
+    *,
+    kernel: Kernel,
+    X: np.ndarray,
+    y: np.ndarray,
+    relax_alpha: float,
+):
+    """Calculate the (negated) log marginal likelihood for a specific theta.
+
+    Parameters
+    ----------
+    theta
+        The selected hyperparameters.
+    eval_gradient
+        Whether the gradient should be computed as well.
+    kernel
+        The kernel to which the theta should be applied.
+    X, y
+        Supporting input observations, already transformed and normalized.
+    relax_alpha
+        Noise level, relaxes the matrix manipulation problems.
+
+    Returns
+    -------
+    float
+        The log-marginal likelihood.
+    ndarray
+        The gradient, if requested.
+    """
+    kernel = kernel.clone_with_theta(theta)
+
+    matrices_or_error = calculate_prediction_matrices(
+        X, y,
+        kernel=kernel,
+        eval_gradient=eval_gradient,
+        relax_alpha=relax_alpha,
+    )
+    if isinstance(matrices_or_error, np.linalg.LinAlgError):
+        if eval_gradient:
+            return -np.inf, np.zeros_like(theta)
+        else:
+            return -np.inf
+    K, L, alpha, K_gradient = matrices_or_error
+
+    # compute log-likelihood
+    log_likelihood = -0.5 * y.dot(alpha)
+    log_likelihood -= np.log(np.diag(L)).sum()
+    log_likelihood -= K.shape[0] / 2 * np.log(2 * np.pi)
+
+    if eval_gradient:
+        tmp = np.outer(alpha, alpha)
+        tmp -= scipy.linalg.cho_solve((L, True), np.eye(K.shape[0]))
+        # compute "0.5 * trace(tmp dot K_gradient"
+        # without constructing the full matrix
+        # as only the diagonal is required
+        log_likelihood_gradient = 0.5 * np.einsum('ij,ijk->k', tmp, K_gradient)
+
+        return -log_likelihood, -log_likelihood_gradient
+
+    return -log_likelihood
+
+
+def calculate_prediction_matrices(
+    X: np.ndarray, y: np.ndarray, *,
+    kernel: Kernel,
+    eval_gradient: bool,
+    relax_alpha: float,
+) -> t.Union[
+    np.linalg.LinAlgError,
+    t.Tuple[np.ndarray, np.ndarray, np.ndarray, t.Optional[np.ndarray]],
+]:
+    K_gradient = None
+    if eval_gradient:
+        K, K_gradient = kernel(X, eval_gradient=True)
+    else:
+        K = kernel(X)
+
+    K[np.diag_indices_from(K)] += relax_alpha
+
+    try:
+        L = scipy.linalg.cholesky(K, lower=True)
+    except np.linalg.LinAlgError as exc:
+        return exc
+
+    # solve the system "K alpha = y" for alpha,
+    # based on the cholesky factorization L.
+    alpha = scipy.linalg.cho_solve((L, True), y)
+
+    return K, L, alpha, K_gradient
+
+
+def minimize(
+    obj_func: t.Callable,
+    start: np.ndarray,
+    bounds: np.ndarray,
+) -> t.Tuple[np.ndarray, float]:
+    result, fmin, convergence_dict = \
+        scipy.optimize.fmin_l_bfgs_b(obj_func, start, bounds=bounds)
+    if convergence_dict['warnflag'] != 0:
+        warnings.warn(
+            f"fmin_l_bfgs_b failed with state:\n"
+            f"        {convergence_dict}")
+    return result, fmin
