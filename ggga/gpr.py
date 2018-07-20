@@ -9,7 +9,7 @@ import attr
 from sklearn.base import clone  # type: ignore
 
 from .space import Space
-from .util import fork_random_state
+from .util import fork_random_state, minimize_by_gradient
 from .surrogate_model import SurrogateModel
 
 # large parts of this code are “borrowed” from skopt (scikit-optimize),
@@ -211,12 +211,14 @@ def fit_kernel(
     bounds = kernel.bounds
 
     # start optimizing from prior kernel
-    optimal_theta, optimal_lml = minimize(obj_func, kernel.theta, bounds)
+    optimal_theta, optimal_lml = minimize_by_gradient(
+        obj_func, kernel.theta, bounds=bounds)
 
     # add more restarts
     for _ in range(n_restarts_optimizer):
         theta_prior = rng.uniform(bounds[:, 0], bounds[:, 1])
-        theta_posterior, lml = minimize(obj_func, theta_prior, bounds)
+        theta_posterior, lml = minimize_by_gradient(
+            obj_func, theta_prior, bounds=bounds)
         if lml < optimal_lml:  # minimize the lml
             optimal_theta, optimal_lml = theta_posterior, lml
 
@@ -316,17 +318,3 @@ def calculate_prediction_matrices(
     alpha = scipy.linalg.cho_solve((L, True), y)
 
     return K, L, alpha, K_gradient
-
-
-def minimize(
-    obj_func: t.Callable,
-    start: np.ndarray,
-    bounds: np.ndarray,
-) -> t.Tuple[np.ndarray, float]:
-    result, fmin, convergence_dict = \
-        scipy.optimize.fmin_l_bfgs_b(obj_func, start, bounds=bounds)
-    if convergence_dict['warnflag'] != 0:
-        warnings.warn(
-            f"fmin_l_bfgs_b failed with state:\n"
-            f"        {convergence_dict}")
-    return result, fmin

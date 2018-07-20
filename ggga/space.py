@@ -16,8 +16,15 @@ class Param(abc.ABC, t.Generic[T]):
         pass
 
     @abc.abstractmethod
-    def mutate(self, value: T, *, rng: RandomState, relscale: float) -> T:
+    def mutate_transformed(self, value, *, rng: RandomState, relscale: float):
         pass
+
+    def mutate(self, value: T, *, rng: RandomState, relscale: float) -> T:
+        return self.from_transformed(
+            self.mutate_transformed(
+                self.into_transformed(value),
+                rng=rng,
+                relscale=relscale))
 
     @abc.abstractproperty
     def size(self):
@@ -78,13 +85,14 @@ class Integer(Param[int]):
             assert hi <= self.hi
         return rng.randint(lo, hi + 1)
 
-    def mutate(self, value, *, rng: RandomState, relscale: float) -> int:
+    def mutate_transformed(
+        self, x: float, *, rng: RandomState, relscale: float
+    ) -> float:
         retries = 20
-        x = self.into_transformed(value)
         for _ in range(retries):
             mutx = x + rng.standard_normal() * relscale
             if self.is_valid_transformed(mutx):
-                return self.from_transformed(mutx)
+                return mutx
             relscale *= 0.8
         raise RuntimeError("mutation failed to produce values within bounds")
 
@@ -141,13 +149,14 @@ class Real(Param[float]):
         x_transformed = rng.random_sample() * size_transformed + lo_transformed
         return self.from_transformed(x_transformed)
 
-    def mutate(self, value, *, rng: RandomState, relscale: float) -> float:
+    def mutate_transformed(
+        self, x: float, *, rng: RandomState, relscale: float
+    ) -> float:
         retries = 20
-        x = self.into_transformed(value)
         for _ in range(retries):
             mutx = x + rng.standard_normal() * relscale
             if self.is_valid_transformed(mutx):
-                return self.from_transformed(mutx)
+                return mutx
             relscale *= 0.8
         raise RuntimeError("mutation failed to produce values within bounds")
 
@@ -165,7 +174,10 @@ class Real(Param[float]):
         return ((value - self.lo) / self.size)**self.exp
 
     def from_transformed(self, value: float) -> float:
-        return (value * self.size + self.lo)**(1/self.exp)
+        x = value**(1/self.exp) * self.size + self.lo
+        assert np.isfinite(x), (
+            f"value={value} exp={self.exp} size={self.size} lo={self.lo}")
+        return x
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
         return (0.0, 1.0)
@@ -233,14 +245,24 @@ class Space(object):
 
     def mutate(self, sample: list, *,
                rng: RandomState, relscale: float) -> list:
-        return [
-            p.mutate(x, rng=rng, relscale=relscale)
-            for p, x in zip(self.params, sample)
-        ]
+        return self.from_transformed(
+            self.mutate_transformed(
+                self.into_transformed(sample),
+                rng=rng, relscale=relscale))
+
+    def mutate_transformed(
+        self, sample_transformed: list, *, rng: RandomState, relscale: float,
+    ) -> list:
+        return [p.mutate_transformed(x, rng=rng, relscale=relscale)
+                for p, x in zip(self.params, sample_transformed)]
 
     def is_valid(self, sample) -> bool:
         return all(p.is_valid(v) for p, v in zip(self.params, sample)) \
                 and all(c(sample) for c in self.constraints)
+
+    def is_valid_transformed(self, sample: list) -> bool:
+        return all(p.is_valid_transformed(v)
+                   for p, v in zip(self.params, sample))
 
     def into_transformed(self, sample: list) -> list:
         return [p.into_transformed(v) for p, v in zip(self.params, sample)]

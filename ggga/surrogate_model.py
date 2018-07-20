@@ -18,9 +18,13 @@ class SurrogateModel(abc.ABC):
     ) -> 'SurrogateModel':
         pass
 
-    def predict(self, sample: list):
-        mean, std = self.predict_a([sample])
-        return mean[0], std[0]
+    def predict(self, sample: list, *, return_std: bool = True):
+        if return_std:
+            mean, std = self.predict_a([sample], return_std=True)
+            return mean[0], std[0]
+        else:
+            mean = self.predict_a([sample], return_std=False)
+            return mean[0]
 
     def predict_a(self, multiple_samples: list, return_std: bool=True):
         return self.predict_transformed_a(

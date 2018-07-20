@@ -4,7 +4,7 @@ import scipy.stats  # type: ignore
 import typing as t
 import asyncio
 from .gpr import SurrogateModelGPR
-from .util import tabularize, fork_random_state
+from .util import tabularize, fork_random_state, minimize_by_gradient
 from .surrogate_model import SurrogateModel
 from .space import Space, Real
 import time
@@ -155,16 +155,54 @@ def suggest_next_candidate(
     relscale: float, fmin: float, breadth: int,
     rng: RandomState, model: SurrogateModel, space: Space,
 ) -> Individual:
-    candidate_samples = [
-        space.mutate(parent.sample, relscale=relscale, rng=rng)
-        for _ in range(breadth)]
-    candidate_mean, candidate_std = model.predict_a(candidate_samples)
-    candidate_ei = expected_improvement(candidate_mean, candidate_std, fmin)
-    i = np.argmax(candidate_ei)
+
+    parent_sample_transformed = space.into_transformed(parent.sample)
+
+    def objective_neg_ei(sample_transformed: Sample) -> float:
+        mean, std = model.predict_transformed_a(sample_transformed)
+        ei = expected_improvement(mean[0], std[0], fmin)
+        return -ei
+
+    def minimize_neg_ei(sample_transformed: Sample) -> t.Tuple[Sample, float]:
+        return minimize_by_gradient(
+            objective_neg_ei, sample_transformed,
+            approx_grad=True,
+            bounds=[p.transformed_bounds() for p in space.params],
+        )
+
+    optimal_sample_transformed, optimal_neg_ei = minimize_neg_ei(
+        parent_sample_transformed)
+    assert space.is_valid_transformed(optimal_sample_transformed), (
+        f"first sample: {optimal_sample_transformed}")
+
+    for _ in range(breadth):
+        candidate_sample_transformed, candidate_neg_ei = minimize_neg_ei(
+            space.mutate_transformed(
+                parent_sample_transformed, relscale=relscale, rng=rng))
+        assert space.is_valid_transformed(candidate_sample_transformed), (
+            f"candidate sample: {candidate_sample_transformed}")
+        if candidate_neg_ei < optimal_neg_ei:
+            optimal_sample_transformed = candidate_sample_transformed
+            optimal_neg_ei = candidate_neg_ei
+
+    optimal_mean = model.predict_transformed_a(
+        optimal_sample_transformed, return_std=False)
+
     return Individual(
-        candidate_samples[i],
-        prediction=candidate_mean[i],
-        ei=candidate_ei[i])
+        space.from_transformed(optimal_sample_transformed),
+        prediction=optimal_mean[0],
+        ei=-optimal_neg_ei)
+
+    # candidate_samples = [
+    #     space.mutate(parent.sample, relscale=relscale, rng=rng)
+    #     for _ in range(breadth)]
+    # candidate_mean, candidate_std = model.predict_a(candidate_samples)
+    # candidate_ei = expected_improvement(candidate_mean, candidate_std, fmin)
+    # i = np.argmax(candidate_ei)
+    # return Individual(
+    #     candidate_samples[i],
+    #     prediction=candidate_mean[i],
+    #     ei=candidate_ei[i])
 
 
 def suggest_next_candidate_a(
@@ -322,7 +360,8 @@ async def minimize(
                 relscale=relscale * (relscale_attenuation ** i),
                 fmin=fmin,
                 rng=rng,
-                breadth=20,
+                # breadth=20,
+                breadth=3,
                 model=model,
                 space=space,
             )

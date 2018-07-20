@@ -1,5 +1,8 @@
 import typing as t
 from numpy.random import RandomState  # type: ignore
+import numpy as np  # type: ignore
+import warnings
+import scipy.optimize  # type: ignore
 
 
 def fork_random_state(rng):
@@ -23,3 +26,26 @@ def tabularize(
             col[i].rjust(size) for col, size in zip(columns, col_size)))
     out[0], out[1] = out[1], out[0]
     return '\n'.join(out)
+
+
+def minimize_by_gradient(
+    obj_func: t.Callable,
+    start: np.ndarray,
+    *,
+    bounds: list = None,
+    approx_grad: bool = False,
+) -> t.Tuple[np.ndarray, float]:
+    result, fmin, convergence_dict = scipy.optimize.fmin_l_bfgs_b(
+        obj_func, start, bounds=bounds, approx_grad=approx_grad)
+
+    if convergence_dict['warnflag'] != 0:
+        warnings.warn(
+            f"fmin_l_bfgs_b failed with state:\n"
+            f"        {convergence_dict}")
+
+    # clip values to bounds, if any
+    if bounds is not None:
+        lo, hi = np.array(bounds).T
+        result = np.clip(result, lo, hi)
+
+    return result, fmin
