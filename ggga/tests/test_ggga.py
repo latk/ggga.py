@@ -1,4 +1,4 @@
-from ..minimize import expected_improvement
+from ..acquisition import expected_improvement
 
 
 def test_expected_improvement():

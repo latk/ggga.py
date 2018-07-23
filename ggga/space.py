@@ -20,11 +20,10 @@ class Param(abc.ABC, t.Generic[T]):
         pass
 
     def mutate(self, value: T, *, rng: RandomState, relscale: float) -> T:
-        return self.from_transformed(
-            self.mutate_transformed(
-                self.into_transformed(value),
-                rng=rng,
-                relscale=relscale))
+        return self.from_transformed(self.mutate_transformed(
+            self.into_transformed(value),
+            rng=rng,
+            relscale=relscale))
 
     @abc.abstractproperty
     def size(self):
@@ -94,7 +93,10 @@ class Integer(Param[int]):
             if self.is_valid_transformed(mutx):
                 return mutx
             relscale *= 0.8
-        raise RuntimeError("mutation failed to produce values within bounds")
+        raise RuntimeError(
+            f"mutation failed to produce values within bounds"
+            f"\n  last mutx = {mutx}"
+            f"\n  input x   = {x}")
 
     @property
     def size(self) -> int:
@@ -119,15 +121,28 @@ class Integer(Param[int]):
         return self.lo, self.hi
 
 
+class Scale(abc.ABC):
+    @abc.abstractmethod
+    def transform(self, x: float) -> float:
+        pass
+
+    @abc.abstractmethod
+    def reverse(self, x: float) -> float:
+        pass
+
+
 class Real(Param[float]):
     lo: float
     hi: float
 
-    def __init__(self, name, flag, lo, hi, exp=1.0):
+    def __init__(self, name, flag, lo, hi, scale: Scale = None) -> None:
         super().__init__(name, flag)
         self.lo = lo
         self.hi = hi
-        self.exp = exp
+        self.scale = scale
+
+        if scale is not None:
+            assert isinstance(scale, Scale)
 
     def sample(
         self, *,
@@ -158,7 +173,10 @@ class Real(Param[float]):
             if self.is_valid_transformed(mutx):
                 return mutx
             relscale *= 0.8
-        raise RuntimeError("mutation failed to produce values within bounds")
+        raise RuntimeError(
+            f"mutation failed to produce values within bounds"
+            f"\n  last mutx = {mutx}"
+            f"\n  input x   = {x}")
 
     @property
     def size(self) -> float:
@@ -171,12 +189,26 @@ class Real(Param[float]):
         return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: float) -> float:
-        return ((value - self.lo) / self.size)**self.exp
+        x = value
+
+        x = (x - self.lo) / self.size
+
+        if self.scale is not None:
+            x = self.scale.transform(x)
+
+        return x
 
     def from_transformed(self, value: float) -> float:
-        x = value**(1/self.exp) * self.size + self.lo
-        assert np.isfinite(x), (
-            f"value={value} exp={self.exp} size={self.size} lo={self.lo}")
+        x = value
+
+        if self.scale is not None:
+            x = self.scale.reverse(x)
+
+        x = x * self.size + self.lo
+
+        if self.scale == 'log1p':
+            x = np.expm1(x)
+
         return x
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
@@ -184,6 +216,20 @@ class Real(Param[float]):
 
     def bounds(self) -> t.Tuple[float, float]:
         return self.lo, self.hi
+
+
+class Log1pScale(Scale):
+    def __init__(self, scale: float) -> None:
+        self._scale = np.exp(scale)
+        self._output_size = np.log1p(self._scale)
+
+    def transform(self, x: float) -> float:
+        assert 0 <= x <= 1
+        return np.log1p(self._scale * x) / self._output_size
+
+    def reverse(self, x: float) -> float:
+        assert 0 <= x <= 1
+        return np.expm1(x * self._output_size) / self._scale
 
 
 class Space(object):

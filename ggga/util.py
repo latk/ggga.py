@@ -4,6 +4,8 @@ import numpy as np  # type: ignore
 import warnings
 import scipy.optimize  # type: ignore
 
+TNumpy = t.TypeVar('TNumpy', np.ndarray, float)
+
 
 def fork_random_state(rng):
     return RandomState(rng.randint(2**32 - 1))
