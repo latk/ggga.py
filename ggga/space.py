@@ -289,18 +289,25 @@ class Space(object):
 
         raise RuntimeError("Could not find valid sample")
 
-    def mutate(self, sample: list, *,
-               rng: RandomState, relscale: float) -> list:
+    def mutate(
+        self, sample: list, *,
+        rng: RandomState,
+        relscale: t.Union[float, t.Iterable[float]],
+    ) -> list:
         return self.from_transformed(
             self.mutate_transformed(
                 self.into_transformed(sample),
                 rng=rng, relscale=relscale))
 
     def mutate_transformed(
-        self, sample_transformed: list, *, rng: RandomState, relscale: float,
+        self, sample_transformed: list, *,
+        rng: RandomState,
+        relscale: t.Union[float, t.Iterable[float]],
     ) -> list:
-        return [p.mutate_transformed(x, rng=rng, relscale=relscale)
-                for p, x in zip(self.params, sample_transformed)]
+        if not isinstance(relscale, t.Iterable):
+            relscale = [relscale] * self.n_dims
+        return [p.mutate_transformed(x, rng=rng, relscale=s)
+                for p, x, s in zip(self.params, sample_transformed, relscale)]
 
     def is_valid(self, sample) -> bool:
         return all(p.is_valid(v) for p, v in zip(self.params, sample)) \

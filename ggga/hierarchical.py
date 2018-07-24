@@ -70,3 +70,11 @@ class SurrogateModelHierarchical(SurrogateModel):
         detail_ys = detail_model.predict_transformed_a(
             xs, return_std=False)
         return base_ys + detail_ys
+
+    def length_scales(self) -> np.ndarray:
+        return np.ndarray([
+            min(base_scale, detail_scale)
+            for base_scale, detail_scale in zip(
+                self.base_model.length_scales(),
+                self.detail_model.length_scales())
+        ])

@@ -109,3 +109,6 @@ class SurrogateModelKNN(SurrogateModel):
             return y_mean, y_std
 
         return y_mean
+
+    def length_scales(self) -> np.ndarray:
+        return super().length_scales()

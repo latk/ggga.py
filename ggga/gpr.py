@@ -159,6 +159,17 @@ class SurrogateModelGPR(SurrogateModel):
     def __str__(self):
         return str(self.estimator.kernel_)
 
+    def length_scales(self) -> np.ndarray:
+        # assume the length scale is defined by the first kernel
+        # that has a "length_scale" parameter and just take that.
+        # This is the case for a Matern kernel.
+        for key, value in sorted(self.kernel.get_params().items()):
+            key = key.split('__')[-1]
+            if key == 'length_scale':
+                return np.array(value)
+
+        return super().length_scales()
+
 
 @attr.s(frozen=True)
 class ClosedInterval(object):

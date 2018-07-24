@@ -37,10 +37,11 @@ class Logger(object):
     def announce_new_generation(
         self, gen: int, *,
         model: SurrogateModel,
-        relscale: float,
+        relscale: t.Tuple[float],
     ) -> None:
+        formatted_relscale = ' '.join(format(r, '.5') for r in relscale)
         print(f"[INFO] starting generation #{gen}")
-        print(f"       relscale {relscale:.5f}")
+        print(f"       relscale ({formatted_relscale})")
         print(f"       estimator: {model!r}")
 
 
@@ -75,7 +76,7 @@ async def minimize(
     rng: RandomState,
     relscale_initial=0.3,
     relscale_attenuation=0.9,
-    surrogate_model_class: t.Type[SurrogateModel] =SurrogateModelGPR,
+    surrogate_model_class: t.Type[SurrogateModel] = SurrogateModelGPR,
     surrogate_model_args: dict=dict(),
     acquisition_strategy: AcquisitionStrategy = None,
 ) -> OptimizationResult:
@@ -140,13 +141,23 @@ async def minimize(
     fmin: float = min(ind.fitness for ind in all_evaluations)
     while len(all_evaluations) < max_nevals:
         generation += 1
-        relscale = relscale_initial * (relscale_attenuation**(generation - 1))
+        relscale_bound = \
+            relscale_initial * (relscale_attenuation**(generation - 1))
+        relscale = np.clip(model.length_scales(), None, relscale_bound)
 
         logger.announce_new_generation(
-            generation, model=model, relscale=relscale)
+            generation,
+            model=model,
+            relscale=t.cast(t.Tuple[float], tuple(relscale)),
+        )
 
         offspring = list(acquisition_strategy.acquire(
-            population, model=model, rng=rng, fmin=fmin, relscale=relscale))
+            population,
+            model=model,
+            rng=rng,
+            fmin=fmin,
+            relscale=relscale,
+        ))
 
         # evaluate new individuals
         await evaluate_all(offspring, rng=rng, gen=generation)

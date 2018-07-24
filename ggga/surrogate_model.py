@@ -36,3 +36,7 @@ class SurrogateModel(abc.ABC):
     @abc.abstractmethod
     def predict_transformed_a(self, X: t.Iterable, *, return_std: bool=True):
         pass
+
+    @abc.abstractmethod
+    def length_scales(self) -> np.ndarray:
+        return np.array([1.0] * self.space.n_dims)
