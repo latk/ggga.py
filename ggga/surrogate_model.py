@@ -3,9 +3,10 @@ import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import typing as t
 from .space import Space
+from .util import ToJsonish
 
 
-class SurrogateModel(abc.ABC):
+class SurrogateModel(ToJsonish, abc.ABC):
     space: Space
 
     @classmethod

@@ -3,6 +3,7 @@ from numpy.random import RandomState  # type: ignore
 import numpy as np  # type: ignore
 import warnings
 import scipy.optimize  # type: ignore
+import abc
 
 TNumpy = t.TypeVar('TNumpy', np.ndarray, float)
 
@@ -16,10 +17,14 @@ def tabularize(
         formats: t.List[str],
         data: t.Iterable[list],
 ) -> str:
+    assert len(header) == len(formats), (header, formats)
+
     columns = [[str(h)] for h in header]
     for row in data:
         for col, f, d in zip(columns, formats, row):
             col.append(f.format(d))
+    assert all(len(columns[0]) == len(col) for col in columns), \
+        [len(col) for col in columns]
     col_size = [max(len(d) for d in col) for col in columns]
     out = []
     out.append(' '.join('-' * size for size in col_size))
@@ -51,3 +56,18 @@ def minimize_by_gradient(
         result = np.clip(result, lo, hi)
 
     return result, fmin
+
+
+def timer(time_source) -> t.Callable[[], float]:
+    start = time_source()
+
+    def duration():
+        return time_source() - start
+
+    return duration
+
+
+class ToJsonish(abc.ABC):
+    @abc.abstractmethod
+    def to_jsonish(self) -> object:
+        pass

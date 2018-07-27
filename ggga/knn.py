@@ -31,6 +31,12 @@ class SurrogateModelKNN(SurrogateModel):
         self.xs_transformed = xs_transformed
         self.ys = ys
 
+    def to_jsonish(self):
+        return dict(
+            model_class=type(self).__name__,
+            k=self.n_neighbors,
+        )
+
     @classmethod
     def estimate(
         cls, xs: np.ndarray, ys: np.ndarray, *,

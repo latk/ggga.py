@@ -30,14 +30,37 @@ class SurrogateModelGPR(SurrogateModel):
     lml: float = attr.ib()
     space: Space = attr.ib()
 
-    def __repr__(self):
-        def all_config_items():
-            yield from self.kernel.get_params().items()
-            yield 'lml', f'{self.lml:.2e}'
+    def _all_config_items(self) -> t.Iterator[t.Tuple[str, t.Any]]:
+        for key, value in self.kernel.get_params().items():
+            keypart = key.split('__')[-1]
+            if keypart[0] == 'k' and keypart[1:].isdigit():
+                continue
+            yield f"kernel_{key}", value
 
-        params_as_str = ''.join(f'\n    {key}={value}'
-                                for (key, value) in sorted(all_config_items()))
-        return f'SurrogateModelGPR({params_as_str})'
+        yield 'ys_mean', self.ys_mean
+        yield 'ys_min', self.ys_min
+        yield 'lml', self.lml
+
+    def __repr__(self):
+        params_as_str = ''.join(
+            f'\n    {key}={value}'
+            for (key, value) in sorted(self._all_config_items()))
+        return f'SurrogateModelGPR({self.kernel}{params_as_str})'
+
+    def to_jsonish(self) -> dict:
+        data: dict = dict()
+        data['model_class'] = type(self).__name__
+        data['kernel'] = dict()
+        data['kernel']['symbolic'] = str(self.kernel)
+        for k, v in self._all_config_items():
+            if k.startswith('kernel_'):
+                data['kernel'][k[len('kernel_'):]] = v
+            else:
+                data[k] = v
+        return data
+
+    def as_csv_row(self) -> list:
+        return [value for key, value in sorted(self._all_config_items())]
 
     @classmethod
     def estimate(

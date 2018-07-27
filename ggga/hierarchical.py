@@ -17,6 +17,13 @@ class SurrogateModelHierarchical(SurrogateModel):
         self.detail_model = detail_model
         self.space = space
 
+    def to_jsonish(self):
+        data = dict()
+        data['model_class'] = type(self).__name__
+        data['base_model'] = self.base_model.to_jsonish()
+        data['detail_model'] = self.detail_model.to_jsonish()
+        return data
+
     @classmethod
     def estimate(
         cls, xs: np.ndarray, ys: np.ndarray, *,
