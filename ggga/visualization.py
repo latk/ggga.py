@@ -8,8 +8,18 @@ from . import SurrogateModel, Space
 
 
 def partial_dependence(
-    space, model, i, j=None, *, samples_transformed, n_points, rng,
+    space, model, i, j=None, *,
+    samples_transformed, n_points, n_samples=None, rng,
 ) -> tuple:
+
+    if samples_transformed is None:
+        assert n_samples is not None, \
+            "n_samples required to generate samples_transformed"
+        samples_transformed = np.array([
+            space.into_transformed(space.sample(rng=rng))
+            for _ in range(n_samples)
+        ])
+
     def transformed_bounds_linspace(param, n_points):
         return np.linspace(*param.transformed_bounds(), n_points)
 
@@ -49,7 +59,7 @@ def partial_dependence(
 
 def plot_objective(
     xs, ys, *,
-    x_min,
+    x_min=None,
     model: SurrogateModel,
     space: Space,
     contour_levels: int=10,
@@ -61,29 +71,34 @@ def plot_objective(
 ) -> t.Tuple[t.Any, t.Any]:
     n_dims = space.n_dims
 
+    if x_min is None:
+        x_min = xs[np.argmin(ys)]
+
     samples_transformed = [
         space.into_transformed(space.sample(rng=rng))
         for _ in range(n_samples)
     ]
 
     fig, ax = plt.subplots(
-        n_dims, n_dims, figsize=(subplot_size * n_dims, subplot_size * n_dims))
+        n_dims, n_dims,
+        figsize=(subplot_size * n_dims, subplot_size * n_dims),
+        squeeze=False)
 
     for row in range(n_dims):
         # plot single-variable dependence on diagonal
         param_row = space.params[row]
         print("[INFO] dependence plot 1D {} ({})".format(row, param_row.name))
-        xi_transformed, yi, stdi = partial_dependence(
-            space, model, row,
-            samples_transformed=samples_transformed,
-            n_points=n_points,
-            rng=rng)
-        xi = param_row.from_transformed_a(xi_transformed)
         ax_ii = ax[row, row]
         plot_single_variable_dependence(
             ax_ii, row,
-            xi=xi, yi=yi, stdi=stdi, xs=xs, ys=ys, x_min=x_min,
-            param=param_row)
+            xs=xs, ys=ys, x_min=x_min,
+            space=space,
+            model=model,
+            samples_transformed=samples_transformed,
+            n_points=n_points,
+            n_samples=n_samples,
+            rng=rng,
+        )
         ax_ii.set_title(param_row.name + "\n")
         ax_ii.yaxis.tick_right()
         ax_ii.xaxis.tick_top()
@@ -122,17 +137,31 @@ def plot_objective(
 
 def plot_single_variable_dependence(
     ax, i, *,
-    xi, yi, stdi,
     xs, ys,
     x_min,
-    param,
+    space, model,
+    samples_transformed,
+    n_points: int,
+    n_samples: int = None,
+    rng: np.random.RandomState,
     scatter_args=dict(c='g', s=10, lw=0, alpha=0.5),
     minline_args=dict(linestyle='--', color='r', lw=1),
 ):
+    param = space.params[i]
+
+    xi_transformed, yi, stdi = partial_dependence(
+            space, model, i,
+            samples_transformed=None,
+            n_points=n_points,
+            n_samples=n_samples,
+            rng=rng)
+    xi = param.from_transformed_a(xi_transformed)
+
     ax.fill_between(xi, yi - 1.96*stdi, yi + 1.96*stdi, color='b', alpha=0.15)
     ax.scatter([x[i] for x in xs], ys, **scatter_args)
     ax.plot(xi, yi, c='b')
-    ax.axvline(x_min[i], **minline_args)
+    if x_min is not None:
+        ax.axvline(x_min[i], **minline_args)
     x_bounds = param.bounds()
     if x_bounds is not None:
         ax.set_xlim(*x_bounds)
@@ -215,16 +244,20 @@ def plot_convergence(all_evaluations: t.List[Individual]):
 
 
 def plot_observations_against_model(
-    model: SurrogateModel, all_evaluations: t.List[Individual],
+    model: SurrogateModel, all_evaluations: t.List[Individual], *,
+    ax=None, markersize=10,
 ):
-    fig, ax = plt.subplots()
+    fig = None
+    if ax is None:
+        fig, ax = plt.subplots()
+
     observed_data = np.array([ind.fitness for ind in all_evaluations])
     modelled_data = model.predict_a(
         [ind.sample for ind in all_evaluations], return_std=False)
     # plot the data
     ax.plot(
         observed_data, modelled_data,
-        marker='o', alpha=0.5, markersize=10, color='g', ls='')
+        marker='o', alpha=0.5, markersize=markersize, color='g', ls='')
     # plot 45° line
     observed_min, observed_max = np.min(observed_data), np.max(observed_data)
     modelled_min, modelled_max = np.min(modelled_data), np.max(modelled_data)
@@ -236,5 +269,6 @@ def plot_observations_against_model(
     ax.set_xlabel('observed')
     ax.set_ylabel('predicted')
 
-    fig.tight_layout()
+    if fig is not None:
+        fig.tight_layout()
     return fig

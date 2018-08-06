@@ -152,6 +152,10 @@ class OptimizationResult:
     def best_n(self, n: int) -> t.List[Individual]:
         return sorted(self.all_individuals, key=lambda ind: ind.fitness)[:n]
 
+    @property
+    def fmin(self) -> float:
+        return self.best_individual.fitness
+
 
 async def minimize(
     objective: ObjectiveFunction,

@@ -7,9 +7,10 @@ T = t.TypeVar('T')
 
 
 class Param(abc.ABC, t.Generic[T]):
-    def __init__(self, name, flag):
+    def __init__(self, name: str, *, flag: str, format: str) -> None:
         self.name = name
         self.flag = flag
+        self.format = format
 
     @abc.abstractmethod
     def sample(self, *, rng: RandomState, lo=None, hi=None) -> T:
@@ -63,10 +64,18 @@ class Integer(Param[int]):
     lo: int
     hi: int
 
-    def __init__(self, name, flag, lo, hi):
-        super().__init__(name, flag)
+    def __init__(
+        self, name: str, flag: str, lo: int, hi: int, *,
+        format: str = '{}',
+    ) -> None:
+        super().__init__(name, flag=flag, format=format)
         self.lo = lo
         self.hi = hi
+
+    def __repr__(self) -> str:
+        return (f'Integer('
+                f'{self.name!r}, {self.flag!r}, '
+                f'{self.lo!r}, {self.hi!r})')
 
     def sample(
         self, *,
@@ -135,14 +144,24 @@ class Real(Param[float]):
     lo: float
     hi: float
 
-    def __init__(self, name, flag, lo, hi, scale: Scale = None) -> None:
-        super().__init__(name, flag)
+    def __init__(
+        self, name: str, flag: str, lo: float, hi: float, *,
+        scale: Scale = None,
+        format: str = '{:.5f}',
+    ) -> None:
+        super().__init__(name, flag=flag, format=format)
         self.lo = lo
         self.hi = hi
         self.scale = scale
 
         if scale is not None:
             assert isinstance(scale, Scale)
+
+    def __repr__(self) -> str:
+        return (f'Integer('
+                f'{self.name!r}, {self.flag!r}, '
+                f'{self.lo!r}, {self.hi!r}), '
+                f'scale={self.scale!r}')
 
     def sample(
         self, *,
@@ -158,11 +177,24 @@ class Real(Param[float]):
             hi = self.hi
         else:
             assert hi <= self.hi
-        hi_transformed = self.into_transformed(hi)
-        lo_transformed = self.into_transformed(lo)
-        size_transformed = (hi_transformed - lo_transformed)
-        x_transformed = rng.random_sample() * size_transformed + lo_transformed
-        return self.from_transformed(x_transformed)
+        # hi_transformed = self.into_transformed(hi)
+        # lo_transformed = self.into_transformed(lo)
+        # size_transformed = (hi_transformed - lo_transformed)
+        # x_transformed = rng.random_sample() * size_transformed + lo_transformed
+        # return self.from_transformed(x_transformed)
+        return self.from_transformed(self.sample_transformed(
+            rng=rng,
+            lo=self.into_transformed(lo),
+            hi=self.into_transformed(hi),
+        ))
+
+    def sample_transformed(
+        self, *, rng: RandomState, lo: float, hi: float,
+    ) -> float:
+        assert 0.0 <= lo <= hi <= 1.0, \
+            f'bounds [{lo},{hi}] must be within [0,1]'
+        size = hi - lo
+        return rng.random_sample() * size + lo
 
     def mutate_transformed(
         self, x: float, *, rng: RandomState, relscale: float
@@ -221,18 +253,19 @@ class Real(Param[float]):
 class Log1pScale(Scale):
     def __init__(self, scale: float) -> None:
         self._scale = np.exp(scale)
-        self._output_size = np.log1p(self._scale)
+        self._output_size = np.log1p(self._scale * 1)
 
     def transform(self, x: float) -> float:
-        assert 0 <= x <= 1
+        assert 0.0 <= x <= 1.0, f'value {x} should be in [0, 1]'
         return np.log1p(self._scale * x) / self._output_size
 
     def reverse(self, x: float) -> float:
-        assert 0 <= x <= 1
+        assert 0.0 <= x <= 1.0, f'value {x} should be in [0, 1]'
         return np.expm1(x * self._output_size) / self._scale
 
 
 class Space(object):
+
     def __init__(
         self, *params: Param,
         constraints: t.List[t.Callable[[list], bool]]=None,
@@ -243,13 +276,34 @@ class Space(object):
         if constrained_bounds_suggestions is None:
             constrained_bounds_suggestions = []
 
-        assert all(isinstance(p, Param) for p in params)
-        assert all(callable(c) for c in constraints)
-        assert all(callable(s) for s in constrained_bounds_suggestions)
-
         self.params = params
         self.constraints = constraints
         self.constrained_bounds_suggestions = constrained_bounds_suggestions
+
+        seen_names: t.Set[str] = set()
+        for p in params:
+            assert isinstance(p, Param), f'must be a param: {p!r}'
+            assert p.name not in seen_names, \
+                f'param names must be unique: {p.name}'
+            seen_names.add(p.name)
+
+        assert all(callable(c) for c in constraints)
+        assert all(callable(s) for s in constrained_bounds_suggestions)
+
+    def __repr__(self):
+        s = 'Space('
+        for param in self.params:
+            s += f'\n  {param!r},'
+        s += '\n  constraints=['
+        for constraint in self.constraints:
+            s += f'\n    {constraint}'
+        s += '],'
+        s += '\n  constrained_bounds_suggestions=['
+        for suggestion in self.constrained_bounds_suggestions:
+            s += f'\n    {suggestion}'
+        s += '],'
+        s += '\n)'
+        return s
 
     @property
     def n_dims(self) -> int:
@@ -322,3 +376,7 @@ class Space(object):
 
     def from_transformed(self, sample: list) -> list:
         return [p.from_transformed(v) for p, v in zip(self.params, sample)]
+
+    @property
+    def param_names(self) -> t.List[str]:
+        return [p.name for p in self.params]

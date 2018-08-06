@@ -157,16 +157,16 @@ class RandomWalkAcquisition(AcquisitionStrategy):
 
         assert self.candidate_chain_length > 0
         for i in range(self.candidate_chain_length):
-            offspring = (
+            offspring = [
                 self._one_step(
                     parent,
                     relscale=relscale * (self.relscale_attenuation ** i),
                     fmin=fmin,
                     rng=rng,
-                    model=model
+                    model=model,
                 )
                 for parent in offspring
-            )
+            ]
 
         return offspring
 
@@ -178,13 +178,20 @@ class RandomWalkAcquisition(AcquisitionStrategy):
         model: SurrogateModel,
     ) -> Individual:
         parent_sample_transformed = self.space.into_transformed(parent.sample)
+
         candidate_samples = [
             self.space.mutate_transformed(
                 parent_sample_transformed, relscale=relscale, rng=rng)
             for _ in range(self.breadth)]
-        candidate_mean, candidate_std = model.predict_a(candidate_samples)
+        for sample in candidate_samples:
+            assert self.space.is_valid_transformed(sample), \
+                f'mutated transformed sample must be valid: {sample!r}'
+
+        candidate_mean, candidate_std = model.predict_transformed_a(
+            candidate_samples)
         candidate_ei = expected_improvement(
             candidate_mean, candidate_std, fmin)
+
         i = np.argmax(candidate_ei)
         return Individual(
             self.space.from_transformed(candidate_samples[i]),

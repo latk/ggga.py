@@ -118,6 +118,27 @@ class SurrogateModelGPR(SurrogateModel):
             n_restarts_optimizer=n_restarts_optimizer,
             relax_alpha=relax_alpha)
 
+        return cls.from_kernel(
+            X_train, y_train, kernel,
+            lml=lml, relax_alpha=relax_alpha,
+            ys_min=ys_min, ys_mean=ys_mean,
+            space=space,
+        )
+
+    @classmethod
+    def from_kernel(
+        cls, X_train: np.ndarray, y_train: np.ndarray, kernel: Kernel,
+        lml: t.Optional[float],
+        relax_alpha: float,
+        ys_min: float,
+        ys_mean: float,
+        space: Space,
+    ) -> 'SurrogateModelGPR':
+        if lml is None:
+            lml = -log_marginal_likelihood(
+                kernel.theta, eval_gradient=False, kernel=kernel,
+                X=X_train, y=y_train, relax_alpha=relax_alpha)
+
         # precompute matrices for prediction
         matrices_or_error = calculate_prediction_matrices(
             X_train, y_train,
@@ -144,7 +165,7 @@ class SurrogateModelGPR(SurrogateModel):
             y_train=y_train,
             ys_mean=ys_mean,
             ys_min=ys_min,
-            lml=lml,
+            lml=t.cast(float, lml),
             space=space)
 
     def predict_transformed_a(
@@ -189,9 +210,14 @@ class SurrogateModelGPR(SurrogateModel):
         for key, value in sorted(self.kernel.get_params().items()):
             key = key.split('__')[-1]
             if key == 'length_scale':
-                return np.array(value)
+                break
+        else:
+            return super().length_scales()
 
-        return super().length_scales()
+        if not len(np.shape(value)):
+            value = [value]
+        assert len(np.shape(value)) == 1
+        return np.array(value)
 
 
 @attr.s(frozen=True)

@@ -29,8 +29,8 @@ class SurrogateModel(ToJsonish, abc.ABC):
 
     def predict_a(self, multiple_samples: list, return_std: bool=True):
         return self.predict_transformed_a(
-            (self.space.into_transformed(sample)
-                for sample in multiple_samples),
+            [self.space.into_transformed(sample)
+                for sample in multiple_samples],
             return_std=return_std,
         )
 
