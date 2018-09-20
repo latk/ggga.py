@@ -70,4 +70,4 @@ def timer(time_source) -> t.Callable[[], float]:
 class ToJsonish(abc.ABC):
     @abc.abstractmethod
     def to_jsonish(self) -> object:
-        pass
+        raise NotImplementedError

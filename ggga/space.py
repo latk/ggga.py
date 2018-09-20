@@ -4,6 +4,40 @@ import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 
 T = t.TypeVar('T')
+ProjectedFloat = t.NewType('ProjectedFloat', float)
+
+
+class ProjectedParam:
+
+    def sample(
+        self, *,
+        rng: RandomState,
+        lo: ProjectedFloat = ProjectedFloat(0.0),
+        hi: ProjectedFloat = ProjectedFloat(1.0),
+    ) -> ProjectedFloat:
+        assert 0.0 <= lo <= hi <= 1.0, \
+            f"bounds [{lo},{hi}] must be within [0,1]"
+
+        size = hi - lo
+        return rng.random_sample() * size + lo
+
+    def mutate(
+        self, x: ProjectedFloat, *,
+        rng: RandomState,
+        relscale: float,
+        relscale_attenuation: float = 0.8,
+        retries: int = 20,
+    ) -> ProjectedFloat:
+        for _ in range(retries):
+            mutx = x + rng.standard_normal() * relscale
+            if 0.0 <= mutx <= 1.0:
+                return mutx
+            relscale *= relscale_attenuation
+
+        raise RuntimeError(
+            f"mutation failed to produce values within bounds"
+            f"\n  last mutx = {mutx}"
+            f"\n  input x   = {x}")
 
 
 class Param(abc.ABC, t.Generic[T]):
@@ -14,11 +48,11 @@ class Param(abc.ABC, t.Generic[T]):
 
     @abc.abstractmethod
     def sample(self, *, rng: RandomState, lo=None, hi=None) -> T:
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
     def mutate_transformed(self, value, *, rng: RandomState, relscale: float):
-        pass
+        raise NotImplementedError
 
     def mutate(self, value: T, *, rng: RandomState, relscale: float) -> T:
         return self.from_transformed(self.mutate_transformed(
@@ -28,23 +62,21 @@ class Param(abc.ABC, t.Generic[T]):
 
     @abc.abstractproperty
     def size(self):
-        pass
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def is_valid(self, value: T) -> bool:
-        pass
+        return self.is_valid_transformed(self.into_transformed(value))
 
-    @abc.abstractmethod
-    def is_valid_transformed(self, value) -> bool:
-        pass
+    def is_valid_transformed(self, value: float) -> bool:
+        return 0.0 <= value <= 1.0
 
     @abc.abstractmethod
     def into_transformed(self, value: T):
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
     def from_transformed(self, value) -> T:
-        pass
+        raise NotImplementedError
 
     def into_transformed_a(self, values: list) -> list:
         return [self.into_transformed(x) for x in values]
@@ -52,9 +84,8 @@ class Param(abc.ABC, t.Generic[T]):
     def from_transformed_a(self, values: list) -> list:
         return [self.from_transformed(x) for x in values]
 
-    @abc.abstractmethod
-    def transformed_bounds(self) -> tuple:
-        pass
+    def transformed_bounds(self) -> t.Tuple[float, float]:
+        return (0.0, 1.0)
 
     def bounds(self) -> t.Optional[t.Tuple[T, T]]:
         return None
@@ -96,16 +127,8 @@ class Integer(Param[int]):
     def mutate_transformed(
         self, x: float, *, rng: RandomState, relscale: float
     ) -> float:
-        retries = 20
-        for _ in range(retries):
-            mutx = x + rng.standard_normal() * relscale
-            if self.is_valid_transformed(mutx):
-                return mutx
-            relscale *= 0.8
-        raise RuntimeError(
-            f"mutation failed to produce values within bounds"
-            f"\n  last mutx = {mutx}"
-            f"\n  input x   = {x}")
+        return ProjectedParam().mutate(
+            ProjectedFloat(x), rng=rng, relscale=relscale)
 
     @property
     def size(self) -> int:
@@ -114,17 +137,11 @@ class Integer(Param[int]):
     def is_valid(self, value: int) -> bool:
         return self.lo <= value <= self.hi
 
-    def is_valid_transformed(self, value: float) -> bool:
-        return 0.0 <= value <= 1.0
-
     def into_transformed(self, value: int) -> float:
         return (value - self.lo) / self.size
 
     def from_transformed(self, value: float) -> int:
         return int(np.round(value * self.size + self.lo))
-
-    def transformed_bounds(self) -> t.Tuple[float, float]:
-        return (0.0, 1.0)
 
     def bounds(self) -> t.Tuple[int, int]:
         return self.lo, self.hi
@@ -133,11 +150,11 @@ class Integer(Param[int]):
 class Scale(abc.ABC):
     @abc.abstractmethod
     def transform(self, x: float) -> float:
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
     def reverse(self, x: float) -> float:
-        pass
+        raise NotImplementedError
 
 
 class Real(Param[float]):
@@ -177,48 +194,21 @@ class Real(Param[float]):
             hi = self.hi
         else:
             assert hi <= self.hi
-        # hi_transformed = self.into_transformed(hi)
-        # lo_transformed = self.into_transformed(lo)
-        # size_transformed = (hi_transformed - lo_transformed)
-        # x_transformed = rng.random_sample() * size_transformed + lo_transformed
-        # return self.from_transformed(x_transformed)
-        return self.from_transformed(self.sample_transformed(
+        return self.from_transformed(ProjectedParam().sample(
             rng=rng,
             lo=self.into_transformed(lo),
             hi=self.into_transformed(hi),
         ))
 
-    def sample_transformed(
-        self, *, rng: RandomState, lo: float, hi: float,
-    ) -> float:
-        assert 0.0 <= lo <= hi <= 1.0, \
-            f'bounds [{lo},{hi}] must be within [0,1]'
-        size = hi - lo
-        return rng.random_sample() * size + lo
-
     def mutate_transformed(
         self, x: float, *, rng: RandomState, relscale: float
     ) -> float:
-        retries = 20
-        for _ in range(retries):
-            mutx = x + rng.standard_normal() * relscale
-            if self.is_valid_transformed(mutx):
-                return mutx
-            relscale *= 0.8
-        raise RuntimeError(
-            f"mutation failed to produce values within bounds"
-            f"\n  last mutx = {mutx}"
-            f"\n  input x   = {x}")
+        return ProjectedParam().mutate(
+            ProjectedFloat(x), rng=rng, relscale=relscale)
 
     @property
     def size(self) -> float:
         return self.hi - self.lo
-
-    def is_valid(self, value: float) -> bool:
-        return self.lo <= value <= self.hi
-
-    def is_valid_transformed(self, value: float) -> bool:
-        return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: float) -> float:
         x = value
@@ -242,9 +232,6 @@ class Real(Param[float]):
             x = np.expm1(x)
 
         return x
-
-    def transformed_bounds(self) -> t.Tuple[float, float]:
-        return (0.0, 1.0)
 
     def bounds(self) -> t.Tuple[float, float]:
         return self.lo, self.hi

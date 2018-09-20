@@ -1,6 +1,6 @@
 import pytest  # type: ignore
 import functools
-import numpy as np
+import numpy as np  # type: ignore
 
 
 def test_expected_improvement():
@@ -60,7 +60,8 @@ def describe_gpr():
             assert model.predict(1.0) == pytest.approx(3.1, abs=0.1)
 
         def it_should_have_similar_uncertainty_for_single_observations(model):
-            assert model.uncertainty(0.1) == pytest.approx(model.uncertainty(0.9))
+            assert model.uncertainty(0.1) \
+                == pytest.approx(model.uncertainty(0.9))
 
         def it_should_have_lower_uncertainty_for_more_observations(model):
             assert model.uncertainty(0.5) < model.uncertainty(0.1)
@@ -91,3 +92,22 @@ def describe_gpr():
         def it_should_have_more_uncertainty_for_extrapolation(model):
             assert model.uncertainty(0.0) > 10 * model.uncertainty(0.3)
             assert model.uncertainty(1.0) > 10 * model.uncertainty(0.3)
+
+def describe_params():
+
+    def describe_integers():
+        from ..space import Integer
+
+        def describe_sample():
+
+            def it_produces_uniform_samples():
+                lo, hi = 0, 9
+                rng = np.random.RandomState(1717)
+                param = Integer('test', '--test', lo, hi)
+
+                counts = [0] * 10
+                for _ in range(30):
+                    sample = param.sample(rng=rng)
+                    counts[sample] += 1
+
+                assert counts == pytest.approx([3] * 10, abs=2)

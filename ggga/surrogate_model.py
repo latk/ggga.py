@@ -17,7 +17,7 @@ class SurrogateModel(ToJsonish, abc.ABC):
         rng: RandomState,
         prior: 'SurrogateModel',
     ) -> 'SurrogateModel':
-        pass
+        raise NotImplementedError
 
     def predict(self, sample: list, *, return_std: bool = True):
         if return_std:
@@ -36,7 +36,7 @@ class SurrogateModel(ToJsonish, abc.ABC):
 
     @abc.abstractmethod
     def predict_transformed_a(self, X: t.Iterable, *, return_std: bool=True):
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
     def length_scales(self) -> np.ndarray:

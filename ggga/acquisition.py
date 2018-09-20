@@ -22,7 +22,7 @@ class AcquisitionStrategy(abc.ABC):
         rng: RandomState,
         fmin: float,
     ) -> t.Iterator[Individual]:
-        pass
+        raise NotImplementedError
 
 
 class ChainedAcquisition(AcquisitionStrategy):
