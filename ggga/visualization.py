@@ -68,6 +68,13 @@ def plot_objective(
     subplot_size: float=2,
     rng: np.random.RandomState,
     cmap='viridis_r',
+    contour_filled: bool = True,
+    contour_lines: bool = False,
+    contour_scatter_args=None,
+    contour_xmin_scatter_args=None,
+    contour_args=None,
+    contour_filled_args=None,
+    contour_lines_args=None,
 ) -> t.Tuple[t.Any, t.Any]:
     n_dims = space.n_dims
 
@@ -122,7 +129,16 @@ def plot_objective(
                 param_x=param_col, param_y=param_row,
                 contour_levels=contour_levels, cmap=cmap,
                 show_xticks=(row == n_dims - 1),
-                show_yticks=(col == 0))
+                show_yticks=(col == 0),
+                filled=contour_filled,
+                lines=contour_lines,
+                scatter_args=contour_scatter_args,
+                xmin_scatter_args=contour_xmin_scatter_args,
+                contour_args=contour_args,
+                contour_filled_args=contour_filled_args,
+                contour_lines_args=contour_lines_args,
+            )
+
 
         # hide top right triangle
         for col in range(row + 1, n_dims):
@@ -175,14 +191,45 @@ def plot_dual_variable_dependence(
     param_x, param_y,
     contour_levels,
     cmap,
-    scatter_args=dict(c='k', s=10, lw=0),
-    xmin_scatter_args=dict(c='r', s=10, lw=0),
+    scatter_args=None,
+    xmin_scatter_args=None,
     show_xticks: bool,
     show_yticks: bool,
+    filled: bool = True,
+    lines: bool = False,
+    contour_args=None,
+    contour_filled_args=None,
+    contour_lines_args=None,
 ):
-    ax.contourf(xi, yi, zi, contour_levels, locator=None, cmap=cmap)
-    ax.scatter([x[i] for x in xs], [x[j] for x in xs], **scatter_args)
-    ax.scatter(x_min[i], x_min[j], **xmin_scatter_args)
+    cfa = dict(locator=None, cmap=cmap, alpha=0.8)
+    for args in (contour_args, contour_filled_args):
+        if args is not None:
+            cfa.update(args)
+
+    cla = dict(locator=None, colors='k', linewidths=1)
+    for args in (contour_args, contour_lines_args):
+        if args is not None:
+            cla.update(args)
+
+    sca = dict(c='k', s=10, lw=0)
+    if scatter_args is not None:
+        sca.update(scatter_args)
+
+    xsca = dict(sca)
+    xsca.update(c='r')
+    if xmin_scatter_args is not None:
+        xsca.update(xmin_scatter_args)
+
+    # start drawing plots
+
+    if filled:
+        ax.contourf(xi, yi, zi, contour_levels, **cfa)
+
+    if lines:
+        ax.contour(xi, yi, zi, contour_levels, **cla)
+
+    ax.scatter([x[i] for x in xs], [x[j] for x in xs], **sca)
+    ax.scatter(x_min[i], x_min[j], **xsca)
     x_bounds = param_x.bounds()
     if x_bounds is not None:
         ax.set_xlim(*x_bounds)
