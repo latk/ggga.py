@@ -1,4 +1,4 @@
-.PHONY: all test lint install-dev
+.PHONY: all test lint install-dev examples-no-interactive
 
 PYTHON ?= python
 
@@ -15,3 +15,6 @@ lint:
 
 install-dev:
 	$(PYTHON) -m pip install -e .[dev]
+
+examples-no-interactive:
+	time $(PYTHON) ./examples/goldstein_price.py --no-interactive >/dev/null
