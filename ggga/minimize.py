@@ -64,7 +64,7 @@ class Logger:
 
         if self.model_file is not None:
             assert hasattr(self.model_file, 'write'), (
-                f"Model output must be writable file object: ", 
+                f"Model output must be writable file object: ",
                 f"{self.model_file!r}")
 
     def _get_csv_row(self, ind: Individual) -> t.Iterable:

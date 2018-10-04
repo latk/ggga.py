@@ -1,6 +1,4 @@
 import pytest  # type: ignore
-import functools
-import numpy as np
 
 
 def test_expected_improvement():
@@ -60,7 +58,9 @@ def describe_gpr():
             assert model.predict(1.0) == pytest.approx(3.1, abs=0.1)
 
         def it_should_have_similar_uncertainty_for_single_observations(model):
-            assert model.uncertainty(0.1) == pytest.approx(model.uncertainty(0.9))
+            uncertainty_0_1 = model.uncertainty(0.1)
+            uncertainty_0_9 = model.uncertainty(0.9)
+            assert uncertainty_0_1 == pytest.approx(uncertainty_0_9)
 
         def it_should_have_lower_uncertainty_for_more_observations(model):
             assert model.uncertainty(0.5) < model.uncertainty(0.1)

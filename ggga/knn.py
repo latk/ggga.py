@@ -76,8 +76,6 @@ class SurrogateModelKNN(SurrogateModel):
 
         estimator = self.estimator
         train_ys = self.ys
-        n_neighbors = self.n_neighbors
-        n_requests = len(requested_xs)
 
         y_mean = estimator.predict(requested_xs)
 
@@ -91,7 +89,10 @@ class SurrogateModelKNN(SurrogateModel):
             # #   for each neighbour:
             # #       for each request:
             # #           the estimate leaving out that neighbor.
-            # y_mean_estimates = np.zeros((n_neighbors, n_requests), dtype=float)
+            # y_mean_estimates = np.zeros(
+            #     (n_neighbors, n_requests), dtype=float)
+            # n_neighbors = self.n_neighbors
+            # n_requests = len(requested_xs)
             # for i in range(n_neighbors):
             #     # the neighbour indices, leaving out the i'th neighbour
             #     indices = np.arange(0, n_neighbors - 1, dtype=int)

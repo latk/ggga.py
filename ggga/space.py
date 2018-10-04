@@ -177,11 +177,6 @@ class Real(Param[float]):
             hi = self.hi
         else:
             assert hi <= self.hi
-        # hi_transformed = self.into_transformed(hi)
-        # lo_transformed = self.into_transformed(lo)
-        # size_transformed = (hi_transformed - lo_transformed)
-        # x_transformed = rng.random_sample() * size_transformed + lo_transformed
-        # return self.from_transformed(x_transformed)
         return self.from_transformed(self.sample_transformed(
             rng=rng,
             lo=self.into_transformed(lo),

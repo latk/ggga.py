@@ -139,7 +139,6 @@ def plot_objective(
                 contour_lines_args=contour_lines_args,
             )
 
-
         # hide top right triangle
         for col in range(row + 1, n_dims):
             ax[row, col].axis('off')
