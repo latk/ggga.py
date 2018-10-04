@@ -1,8 +1,10 @@
-from .surrogate_model import SurrogateModel
-from .space import Space
 import typing as t
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
+
+from .surrogate_model import SurrogateModel
+from .space import Space
 
 
 class SurrogateModelHierarchical(SurrogateModel):
@@ -57,7 +59,7 @@ class SurrogateModelHierarchical(SurrogateModel):
 
     def predict_transformed_a(
         self, X: t.Iterable, *,
-        return_std: bool=True,
+        return_std: bool = True,
     ):
         xs = np.array(list(X))
 

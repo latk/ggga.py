@@ -1,6 +1,7 @@
+import typing as t
+
 from sklearn import neighbors  # type: ignore
 from numpy.random import RandomState  # type: ignore
-import typing as t
 import numpy as np  # type: ignore
 
 from .space import Space
@@ -41,10 +42,10 @@ class SurrogateModelKNN(SurrogateModel):
     def estimate(
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
-        rng: RandomState,
+        rng: RandomState,  # pylint: disable=unused-argument
         prior: 'SurrogateModel',
         n_neighbors: int = 10,
-        p: int = 2,
+        p: int = 2,  # pylint: disable=invalid-name,
     ) -> 'SurrogateModelKNN':
         assert prior is None or isinstance(prior, SurrogateModelKNN)
         estimator = neighbors.KNeighborsRegressor(
@@ -67,17 +68,15 @@ class SurrogateModelKNN(SurrogateModel):
         )
 
     def predict_transformed_a(
-        self, X: t.Iterable, *,
-        return_std: bool=True,
+        self, mat_x: t.Iterable, *,
+        return_std: bool = True,
     ):
-        if not isinstance(X, (list, np.ndarray)):
-            X = list(X)
-        requested_xs: np.ndarray = np.array(X)
+        if not isinstance(mat_x, (list, np.ndarray)):
+            mat_x = list(mat_x)
+        requested_xs: np.ndarray = np.array(mat_x)
 
         estimator = self.estimator
         train_ys = self.ys
-        n_neighbors = self.n_neighbors
-        n_requests = len(requested_xs)
 
         y_mean = estimator.predict(requested_xs)
 
@@ -91,7 +90,10 @@ class SurrogateModelKNN(SurrogateModel):
             # #   for each neighbour:
             # #       for each request:
             # #           the estimate leaving out that neighbor.
-            # y_mean_estimates = np.zeros((n_neighbors, n_requests), dtype=float)
+            # n_neighbors = self.n_neighbors
+            # n_requests = len(requested_xs)
+            # y_mean_estimates = np.zeros(
+            #     (n_neighbors, n_requests), dtype=float)
             # for i in range(n_neighbors):
             #     # the neighbour indices, leaving out the i'th neighbour
             #     indices = np.arange(0, n_neighbors - 1, dtype=int)
@@ -117,4 +119,6 @@ class SurrogateModelKNN(SurrogateModel):
         return y_mean
 
     def length_scales(self) -> np.ndarray:
+        # allow "useless" super call because the super-method is abstract.
+        # pylint: disable=useless-super-delegation
         return super().length_scales()

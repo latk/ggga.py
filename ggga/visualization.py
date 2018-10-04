@@ -1,161 +1,145 @@
+import typing as t
+
+import attr
 import matplotlib.pyplot as plt  # type: ignore
 import seaborn as sns  # type: ignore
 import numpy as np  # type: ignore
-import typing as t
-from .minimize import Individual
+from numpy.random import RandomState  # type: ignore
 
+from .minimize import Individual
 from . import SurrogateModel, Space
 
 
 def partial_dependence(
-    space, model, i, j=None, *,
-    samples_transformed, n_points, n_samples=None, rng,
+    model: SurrogateModel, dim_1: int, dim_2: int = None, *,
+    samples_transformed: np.ndarray, n_points: int,
 ) -> tuple:
 
-    if samples_transformed is None:
-        assert n_samples is not None, \
-            "n_samples required to generate samples_transformed"
-        samples_transformed = np.array([
-            space.into_transformed(space.sample(rng=rng))
-            for _ in range(n_samples)
-        ])
+    assert samples_transformed is not None
+    samples_transformed = np.array(samples_transformed)  # make a copy
 
-    def transformed_bounds_linspace(param, n_points):
-        return np.linspace(*param.transformed_bounds(), n_points)
+    x_transformed = np.linspace(0.0, 1.0, n_points)
 
-    # one-dimensional case
-    if j is None:
-        xi_transformed = transformed_bounds_linspace(
-            space.params[i], n_points)
-        yi = np.zeros(n_points)
-        stdi = np.zeros(n_points)
-        for n, x in enumerate(xi_transformed):
-            real_transformed_samples = np.array(samples_transformed)
-            real_transformed_samples[:, i] = x
-            y, std = model.predict_transformed_a(real_transformed_samples)
-            yi[n] = np.mean(y)
+    if dim_2 is None:
+        ys = np.zeros(n_points)
+        ys_std = np.zeros(n_points)
+        for i, x in enumerate(x_transformed):
+            samples_transformed[:, dim_1] = x
+            y, std = model.predict_transformed_a(samples_transformed)
+            ys[i] = np.mean(y)
             # IDEALLY: std(a + b) = sqrt(var(a) + var(b) - cov(a, b))
             # NOT: mean of stdev
             # INSTEAD: mean of variance
-            stdi[n] = np.sqrt(np.mean(std**2))
-        return xi_transformed, yi, stdi
+            ys_std[i] = np.sqrt(np.mean(std**2))
+        return x_transformed, ys, ys_std
 
-    # two-dimensional case
-    xi_transformed = transformed_bounds_linspace(
-            space.params[j], n_points)
-    yi_transformed = transformed_bounds_linspace(
-            space.params[i], n_points)
-    zi = []
-    for x in xi_transformed:
-        row = []
-        for y in yi_transformed:
-            real_transformed_samples = np.array(samples_transformed)
-            real_transformed_samples[:, (j, i)] = (x, y)
-            row.append(np.mean(model.predict_transformed_a(
-                real_transformed_samples, return_std=False)))
-        zi.append(row)
-    return xi_transformed, yi_transformed, np.array(zi).T
+    ys = np.zeros((n_points, n_points))
+    for i, x_i in enumerate(x_transformed):
+        for j, x_j in enumerate(x_transformed):
+            samples_transformed[:, (dim_1, dim_2)] = (x_i, x_j)
+            ys[i, j] = np.mean(model.predict_transformed_a(
+                samples_transformed, return_std=False))
+    return x_transformed, x_transformed, ys
+
+
+@attr.s(frozen=True)
+class ObjectivePlotStyle:
+    contour_levels: int = 10
+    subplot_size: float = 2
+    cmap: str = 'viridis_r'
+
+
+@attr.s(frozen=True)
+class ObjectivePlotQuality:
+    points: int = 40
+    samples_per_point: int = 250
 
 
 def plot_objective(
-    xs, ys, *,
+    x_observed, y_observed, *,
     x_min=None,
     model: SurrogateModel,
     space: Space,
-    contour_levels: int=10,
-    n_points: int=40,
-    n_samples: int=250,
-    subplot_size: float=2,
     rng: np.random.RandomState,
-    cmap='viridis_r',
+    quality: ObjectivePlotQuality = ObjectivePlotQuality(),
+    style: ObjectivePlotStyle = ObjectivePlotStyle(),
 ) -> t.Tuple[t.Any, t.Any]:
     n_dims = space.n_dims
 
     if x_min is None:
-        x_min = xs[np.argmin(ys)]
+        x_min = x_observed[np.argmin(y_observed)]
 
     samples_transformed = [
         space.into_transformed(space.sample(rng=rng))
-        for _ in range(n_samples)
+        for _ in range(quality.samples_per_point)
     ]
 
-    fig, ax = plt.subplots(
+    fig, axes = plt.subplots(
         n_dims, n_dims,
-        figsize=(subplot_size * n_dims, subplot_size * n_dims),
+        figsize=(style.subplot_size * n_dims, style.subplot_size * n_dims),
         squeeze=False)
 
     for row in range(n_dims):
         # plot single-variable dependence on diagonal
         param_row = space.params[row]
         print("[INFO] dependence plot 1D {} ({})".format(row, param_row.name))
-        ax_ii = ax[row, row]
+        x_row_transformed, ys, std = partial_dependence(
+                model, row,
+                samples_transformed=samples_transformed,
+                n_points=quality.points)
+        x_row = param_row.from_transformed_a(x_row_transformed)
+        ax = axes[row, row]
         plot_single_variable_dependence(
-            ax_ii, row,
-            xs=xs, ys=ys, x_min=x_min,
+            ax, row,
+            xs=x_observed, ys=y_observed, x_min=x_min,
+            xi=x_row, yi=ys, stdi=std,
             space=space,
-            model=model,
-            samples_transformed=samples_transformed,
-            n_points=n_points,
-            n_samples=n_samples,
-            rng=rng,
         )
-        ax_ii.set_title(param_row.name + "\n")
-        ax_ii.yaxis.tick_right()
-        ax_ii.xaxis.tick_top()
+        ax.set_title(param_row.name + "\n")
+        ax.yaxis.tick_right()
+        ax.xaxis.tick_top()
 
         for col in range(row):
             # plot two-variable dependence on lower triangle
             param_col = space.params[col]
             print("[INFO] dependence plot {} x {} ({} x {})".format(
                 row, col, param_row.name, param_col.name))
-            xi_transformed, yi_transformed, zi = partial_dependence(
-                space, model, row, col,
+            x_row_transformed, x_col_transformed, ys = partial_dependence(
+                model, row, col,
                 samples_transformed=samples_transformed,
-                n_points=n_points,
-                rng=rng)
-            xi = param_col.from_transformed_a(xi_transformed)
-            yi = param_row.from_transformed_a(yi_transformed)
-            ax_ij = ax[row, col]
+                n_points=quality.points)
+            x_row = param_row.from_transformed_a(x_row_transformed)
+            x_col = param_col.from_transformed_a(x_col_transformed)
+            ax_ij = axes[row, col]
             plot_dual_variable_dependence(
                 ax_ij, col, row,
-                xi=xi, yi=yi, zi=zi, xs=xs, x_min=x_min,
+                xi=x_col, yi=x_row, zi=ys, xs=x_observed, x_min=x_min,
                 param_x=param_col, param_y=param_row,
-                contour_levels=contour_levels, cmap=cmap,
+                contour_levels=style.contour_levels, cmap=style.cmap,
                 show_xticks=(row == n_dims - 1),
                 show_yticks=(col == 0))
 
         # hide top right triangle
         for col in range(row + 1, n_dims):
-            ax[row, col].axis('off')
+            axes[row, col].axis('off')
 
     fig.tight_layout()
     fig.subplots_adjust(
         # left=0.05, right=0.95, bottom=0.05, top=0.95,
         hspace=0.03, wspace=0.03)
-    return fig, ax
+    return fig, axes
 
 
 def plot_single_variable_dependence(
     ax, i, *,
     xs, ys,
+    xi, yi, stdi,  # pylint: disable=invalid-name
     x_min,
-    space, model,
-    samples_transformed,
-    n_points: int,
-    n_samples: int = None,
-    rng: np.random.RandomState,
-    scatter_args=dict(c='g', s=10, lw=0, alpha=0.5),
-    minline_args=dict(linestyle='--', color='r', lw=1),
+    space,
+    scatter_args: dict = dict(c='g', s=10, lw=0, alpha=0.5),
+    minline_args: dict = dict(linestyle='--', color='r', lw=1),
 ):
     param = space.params[i]
-
-    xi_transformed, yi, stdi = partial_dependence(
-            space, model, i,
-            samples_transformed=None,
-            n_points=n_points,
-            n_samples=n_samples,
-            rng=rng)
-    xi = param.from_transformed_a(xi_transformed)
 
     ax.fill_between(xi, yi - 1.96*stdi, yi + 1.96*stdi, color='b', alpha=0.15)
     ax.scatter([x[i] for x in xs], ys, **scatter_args)
@@ -169,14 +153,14 @@ def plot_single_variable_dependence(
 
 def plot_dual_variable_dependence(
     ax, i, j, *,
-    xi, yi, zi,
+    xi, yi, zi,  # pylint: disable=invalid-name
     xs,
     x_min,
     param_x, param_y,
     contour_levels,
     cmap,
-    scatter_args=dict(c='k', s=10, lw=0),
-    xmin_scatter_args=dict(c='r', s=10, lw=0),
+    scatter_args: dict = dict(c='k', s=10, lw=0),
+    xmin_scatter_args: dict = dict(c='r', s=10, lw=0),
     show_xticks: bool,
     show_yticks: bool,
 ):
@@ -206,8 +190,8 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     prev_min_fitness = np.inf
     min_fitness = []
     for generation in ind_by_generation:
-        f = min(ind.fitness for ind in generation)
-        prev_min_fitness = min(prev_min_fitness, f)
+        fitness = min(ind.fitness for ind in generation)
+        prev_min_fitness = min(prev_min_fitness, fitness)
         min_fitness.append(prev_min_fitness)
 
     fig, (utility_ax, ei_ax) = plt.subplots(2, 1, sharex=True)
@@ -245,7 +229,7 @@ def plot_convergence(all_evaluations: t.List[Individual]):
 
 def plot_observations_against_model(
     model: SurrogateModel, all_evaluations: t.List[Individual], *,
-    ax=None, markersize=10,
+    ax=None, markersize: int = 10,
 ):
     fig = None
     if ax is None:

@@ -1,12 +1,13 @@
 import numpy as np  # type: ignore
 
 
-class Individual(object):
+class Individual:
+
     def __init__(
         self, sample: list, *,
         fitness: float = None,
         gen: int = None,
-        ei: float = None,
+        ei: float = None,  # pylint: disable=invalid-name
         prediction: float = None,
         cost: float = None,
     ) -> None:
@@ -23,13 +24,12 @@ class Individual(object):
         def default(optional_value, the_default):
             if optional_value is not None:
                 return optional_value
-            else:
-                return the_default
+            return the_default
 
         fitness = default(self._fitness, np.nan)
         sample = ' '.join(repr(x) for x in self._sample)
         prediction = default(self._prediction, np.nan)
-        ei = default(self._ei, np.nan)
+        ei = default(self._ei, np.nan)  # pylint: disable=invalid-name
         gen = default(self._gen, np.nan)
         cost = default(self._cost, np.nan)
         return (f'Individual({fitness} @{cost:.2f} [{sample}]'
@@ -72,12 +72,12 @@ class Individual(object):
         self._gen = value
 
     @property
-    def ei(self) -> float:
+    def ei(self) -> float:  # pylint: disable=invalid-name
         assert self._ei is not None
         return self._ei
 
     @ei.setter
-    def ei(self, value: float) -> None:
+    def ei(self, value: float) -> None:  # pylint: disable=invalid-name
         assert self._ei is None
         self._ei = value
 

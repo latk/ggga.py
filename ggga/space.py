@@ -41,10 +41,10 @@ class ProjectedParam:
 
 
 class Param(abc.ABC, t.Generic[T]):
-    def __init__(self, name: str, *, flag: str, format: str) -> None:
-        self.name = name
-        self.flag = flag
-        self.format = format
+    def __init__(self, name: str, *, flag: str, fmt: str) -> None:
+        self.name: str = name
+        self.flag: str = flag
+        self.fmt: str = fmt
 
     @abc.abstractmethod
     def sample(self, *, rng: RandomState, lo=None, hi=None) -> T:
@@ -68,6 +68,7 @@ class Param(abc.ABC, t.Generic[T]):
         return self.is_valid_transformed(self.into_transformed(value))
 
     def is_valid_transformed(self, value: float) -> bool:
+        # pylint: disable=no-self-use
         return 0.0 <= value <= 1.0
 
     @abc.abstractmethod
@@ -85,9 +86,11 @@ class Param(abc.ABC, t.Generic[T]):
         return [self.from_transformed(x) for x in values]
 
     def transformed_bounds(self) -> t.Tuple[float, float]:
+        # pylint: disable=no-self-use
         return (0.0, 1.0)
 
     def bounds(self) -> t.Optional[t.Tuple[T, T]]:
+        # pylint: disable=no-self-use
         return None
 
 
@@ -97,11 +100,11 @@ class Integer(Param[int]):
 
     def __init__(
         self, name: str, flag: str, lo: int, hi: int, *,
-        format: str = '{}',
+        fmt: str = '{}',
     ) -> None:
-        super().__init__(name, flag=flag, format=format)
-        self.lo = lo
-        self.hi = hi
+        super().__init__(name, flag=flag, fmt=fmt)
+        self.lo: int = lo
+        self.hi: int = hi
 
     def __repr__(self) -> str:
         return (f'Integer('
@@ -111,8 +114,8 @@ class Integer(Param[int]):
     def sample(
         self, *,
         rng: RandomState,
-        lo: int=None,
-        hi: int=None,
+        lo: int = None,
+        hi: int = None,
     ) -> int:
         if lo is None:
             lo = self.lo
@@ -127,6 +130,7 @@ class Integer(Param[int]):
     def mutate_transformed(
         self, x: float, *, rng: RandomState, relscale: float
     ) -> float:
+        # pylint: disable=no-self-use
         return ProjectedParam().mutate(
             ProjectedFloat(x), rng=rng, relscale=relscale)
 
@@ -149,11 +153,11 @@ class Integer(Param[int]):
 
 class Scale(abc.ABC):
     @abc.abstractmethod
-    def transform(self, x: float) -> float:
+    def transform(self, x: ProjectedFloat) -> ProjectedFloat:
         raise NotImplementedError
 
     @abc.abstractmethod
-    def reverse(self, x: float) -> float:
+    def reverse(self, x: ProjectedFloat) -> ProjectedFloat:
         raise NotImplementedError
 
 
@@ -164,12 +168,12 @@ class Real(Param[float]):
     def __init__(
         self, name: str, flag: str, lo: float, hi: float, *,
         scale: Scale = None,
-        format: str = '{:.5f}',
+        fmt: str = '{:.5f}',
     ) -> None:
-        super().__init__(name, flag=flag, format=format)
-        self.lo = lo
-        self.hi = hi
-        self.scale = scale
+        super().__init__(name, flag=flag, fmt=fmt)
+        self.lo: float = lo
+        self.hi: float = hi
+        self.scale: t.Optional[Scale] = scale
 
         if scale is not None:
             assert isinstance(scale, Scale)
@@ -183,8 +187,8 @@ class Real(Param[float]):
     def sample(
         self, *,
         rng: RandomState,
-        lo: float=None,
-        hi: float=None,
+        lo: float = None,
+        hi: float = None,
     ) -> float:
         if lo is None:
             lo = self.lo
@@ -203,6 +207,7 @@ class Real(Param[float]):
     def mutate_transformed(
         self, x: float, *, rng: RandomState, relscale: float
     ) -> float:
+        # pylint: disable=no-self-use
         return ProjectedParam().mutate(
             ProjectedFloat(x), rng=rng, relscale=relscale)
 
@@ -210,28 +215,21 @@ class Real(Param[float]):
     def size(self) -> float:
         return self.hi - self.lo
 
-    def into_transformed(self, value: float) -> float:
-        x = value
-
-        x = (x - self.lo) / self.size
+    def into_transformed(self, value: float) -> ProjectedFloat:
+        x = ProjectedFloat((value - self.lo) / self.size)
 
         if self.scale is not None:
             x = self.scale.transform(x)
 
         return x
 
-    def from_transformed(self, value: float) -> float:
+    def from_transformed(self, value: ProjectedFloat) -> float:
         x = value
 
         if self.scale is not None:
             x = self.scale.reverse(x)
 
-        x = x * self.size + self.lo
-
-        if self.scale == 'log1p':
-            x = np.expm1(x)
-
-        return x
+        return x * self.size + self.lo
 
     def bounds(self) -> t.Tuple[float, float]:
         return self.lo, self.hi
@@ -242,21 +240,25 @@ class Log1pScale(Scale):
         self._scale = np.exp(scale)
         self._output_size = np.log1p(self._scale * 1)
 
-    def transform(self, x: float) -> float:
+    def transform(self, x: ProjectedFloat) -> ProjectedFloat:
         assert 0.0 <= x <= 1.0, f'value {x} should be in [0, 1]'
         return np.log1p(self._scale * x) / self._output_size
 
-    def reverse(self, x: float) -> float:
+    def reverse(self, x: ProjectedFloat) -> ProjectedFloat:
         assert 0.0 <= x <= 1.0, f'value {x} should be in [0, 1]'
         return np.expm1(x * self._output_size) / self._scale
 
 
-class Space(object):
+OpenBound = t.Tuple[t.Optional[float], t.Optional[float]]
+ConstraintSuggestion = t.Callable[[list], t.Dict[str, OpenBound]]
+
+
+class Space:
 
     def __init__(
         self, *params: Param,
-        constraints: t.List[t.Callable[[list], bool]]=None,
-        constrained_bounds_suggestions: t.List[t.Callable[[list], dict]]=None,
+        constraints: t.List[t.Callable[[list], bool]] = None,
+        constrained_bounds_suggestions: t.List[ConstraintSuggestion] = None,
     ) -> None:
         if constraints is None:
             constraints = []
@@ -268,29 +270,29 @@ class Space(object):
         self.constrained_bounds_suggestions = constrained_bounds_suggestions
 
         seen_names: t.Set[str] = set()
-        for p in params:
-            assert isinstance(p, Param), f'must be a param: {p!r}'
-            assert p.name not in seen_names, \
-                f'param names must be unique: {p.name}'
-            seen_names.add(p.name)
+        for param in params:
+            assert isinstance(param, Param), f'must be a param: {param!r}'
+            assert param.name not in seen_names, \
+                f'param names must be unique: {param.name}'
+            seen_names.add(param.name)
 
         assert all(callable(c) for c in constraints)
         assert all(callable(s) for s in constrained_bounds_suggestions)
 
     def __repr__(self):
-        s = 'Space('
+        buffer = 'Space('
         for param in self.params:
-            s += f'\n  {param!r},'
-        s += '\n  constraints=['
+            buffer += f'\n  {param!r},'
+        buffer += '\n  constraints=['
         for constraint in self.constraints:
-            s += f'\n    {constraint}'
-        s += '],'
-        s += '\n  constrained_bounds_suggestions=['
+            buffer += f'\n    {constraint}'
+        buffer += '],'
+        buffer += '\n  constrained_bounds_suggestions=['
         for suggestion in self.constrained_bounds_suggestions:
-            s += f'\n    {suggestion}'
-        s += '],'
-        s += '\n)'
-        return s
+            buffer += f'\n    {suggestion}'
+        buffer += '],'
+        buffer += '\n)'
+        return buffer
 
     @property
     def n_dims(self) -> int:
@@ -298,35 +300,23 @@ class Space(object):
 
     def sample(self, *, rng: RandomState) -> list:
         retries = 10
-        bounds: t.Dict[str, tuple] = dict()
-
-        def merge_lo_hi(llo, lhi, rlo, rhi):
-            if   llo is None:   lo = rlo            # noqa
-            elif rlo is None:   lo = llo            # noqa
-            else:               lo = max(llo, rlo)  # noqa
-
-            if   lhi is None:   hi = rhi            # noqa
-            elif rhi is None:   hi = lhi            # noqa
-            else:               hi = min(lhi, rhi)  # noqa
-
-            if lo is not None and hi is not None:
-                assert lo <= hi
-            return lo, hi
+        bounds: t.Dict[str, OpenBound] = dict()
 
         for _ in range(retries):
-            s = []
+            sample = []
             for param in self.params:
                 lo, hi = bounds.get(param.name, (None, None))
-                s.append(param.sample(rng=rng, lo=lo, hi=hi))
-            if all(c(s) for c in self.constraints):
-                return s
+                sample.append(param.sample(rng=rng, lo=lo, hi=hi))
+            if all(c(sample) for c in self.constraints):
+                return sample
             for suggestion in self.constrained_bounds_suggestions:
-                for k, v in suggestion(s).items():
-                    if v is None:
+                for key, value in suggestion(sample).items():
+                    if value is None:
                         continue
-                    llo, lhi = bounds.get(k, (None, None))
-                    rlo, rhi = v
-                    bounds[k] = merge_lo_hi(llo, lhi, rlo, rhi)
+                    current_bounds = bounds.get(key, (None, None))
+                    suggested_bounds = value
+                    bounds[key] = merge_intervals(
+                        current_bounds, suggested_bounds)
 
         raise RuntimeError("Could not find valid sample")
 
@@ -367,3 +357,29 @@ class Space(object):
     @property
     def param_names(self) -> t.List[str]:
         return [p.name for p in self.params]
+
+
+def merge_intervals(
+    *intervals: OpenBound,
+) -> OpenBound:
+
+    def merge(
+        left: t.Optional[float], right: t.Optional[float], *,
+        operator: t.Callable,
+    ) -> t.Optional[float]:
+        if left is None:
+            return right
+        if right is None:
+            return left
+        return operator(left, right)
+
+    merged_lo, merged_hi = None, None
+    for interval in intervals:
+        curr_lo, curr_hi = interval
+        merged_lo = merge(merged_lo, curr_lo, operator=max)
+        merged_hi = merge(merged_hi, curr_hi, operator=min)
+
+    if merged_lo is not None and merged_hi is not None:
+        assert merged_lo <= merged_hi
+
+    return merged_lo, merged_hi

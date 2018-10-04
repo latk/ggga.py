@@ -1,13 +1,15 @@
 import abc
 import typing as t
-from .surrogate_model import SurrogateModel
-from .util import minimize_by_gradient, TNumpy
-from .individual import Individual
-from .space import Space
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import attr
 import scipy.stats  # type: ignore
+
+from .surrogate_model import SurrogateModel
+from .util import minimize_by_gradient, TNumpy
+from .individual import Individual
+from .space import Space
 
 Sample = list
 IterableIndividuals = t.Iterable[Individual]
@@ -27,7 +29,7 @@ class AcquisitionStrategy(abc.ABC):
 
 class ChainedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
-        self.strategies: t.Collection[AcquisitionStrategy] = strategies
+        self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -45,7 +47,7 @@ class ChainedAcquisition(AcquisitionStrategy):
 
 class HedgedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
-        self.strategies: t.Collection[AcquisitionStrategy] = strategies
+        self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -271,6 +273,7 @@ class GradientAcquisition(AcquisitionStrategy):
 
 
 def expected_improvement(mean: TNumpy, std: TNumpy, fmin: float) -> TNumpy:
+    # pylint: disable=invalid-name
     norm = scipy.stats.norm
     z = -(mean - fmin) / std
     ei = -(mean - fmin) * norm.cdf(z) + std * norm.pdf(z)

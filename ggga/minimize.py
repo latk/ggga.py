@@ -1,7 +1,14 @@
+import asyncio
+import csv
+import json
+import operator
+import time
+import typing as t
+
+import attr
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
-import typing as t
-import asyncio
+
 from .gpr import SurrogateModelGPR
 from .util import tabularize, fork_random_state, timer
 from .surrogate_model import SurrogateModel
@@ -12,17 +19,17 @@ from .acquisition import (
         RandomWalkAcquisition,
         RandomReplacementAcquisition)
 from .individual import Individual
-import time
-import attr
-import csv
-import operator
-import json
 
 
 Sample = list
 ObjectiveFunction = t.Callable[
     [Sample, RandomState], t.Awaitable[t.Tuple[float, float]],
 ]
+
+
+def _csv_row_from_individual(ind: Individual) -> t.Iterable:
+    yield from [ind.gen, ind.fitness, ind.prediction, ind.ei, ind.cost]
+    yield from ind.sample
 
 
 @attr.s
@@ -64,14 +71,11 @@ class Logger:
 
         if self.model_file is not None:
             assert hasattr(self.model_file, 'write'), (
-                f"Model output must be writable file object: ", 
+                f"Model output must be writable file object: ",
                 f"{self.model_file!r}")
 
-    def _get_csv_row(self, ind: Individual) -> t.Iterable:
-        yield from [ind.gen, ind.fitness, ind.prediction, ind.ei, ind.cost]
-        yield from ind.sample
-
     def log(self, msg: str, *, level: str = 'INFO') -> None:
+        # pylint: disable=no-self-use
         marker = f"[{level}]"
         first = True
         for line in msg.splitlines():
@@ -91,14 +95,14 @@ class Logger:
             header=self._evaluation_csv_columns,
             formats=self._evaluation_log_formats,
             data=[
-                list(self._get_csv_row(ind))
+                list(_csv_row_from_individual(ind))
                 for ind in sorted(individuals,
                                   key=operator.attrgetter('fitness'))],
         ))
 
         if self._evaluation_csv_writerow is not None:
             for ind in individuals:
-                self._evaluation_csv_writerow(self._get_csv_row(ind))
+                self._evaluation_csv_writerow(_csv_row_from_individual(ind))
 
     def record_model(
         self, generation: int, model: SurrogateModel, *,
@@ -110,10 +114,10 @@ class Logger:
             f"trained new model ({duration} s):\n"
             f"{model!r}")
 
-        def default(o):
-            if isinstance(o, np.ndarray):
-                return list(o)
-            raise TypeError(f"cannot encode as JSON: {o!r}")
+        def default(any_object):
+            if isinstance(any_object, np.ndarray):
+                return list(any_object)
+            raise TypeError(f"cannot encode as JSON: {any_object!r}")
 
         if self.model_file is not None:
             json.dump(
@@ -150,29 +154,36 @@ class OptimizationResult:
         self.duration = duration
 
     def best_n(self, n: int) -> t.List[Individual]:
-        return sorted(self.all_individuals, key=lambda ind: ind.fitness)[:n]
+        # pylint: disable=invalid-name
+        sorted_individuals = sorted(
+            self.all_individuals,
+            key=operator.attrgetter('fitness'))
+        return sorted_individuals[:n]
 
     @property
     def fmin(self) -> float:
         return self.best_individual.fitness
 
 
+TimeSource = t.Callable[[], float]
+
+
 async def minimize(
     objective: ObjectiveFunction,
     *,
     space: Space,
-    popsize: int=10,
-    max_nevals: int=100,
-    logger: Logger=None,
+    popsize: int = 10,
+    max_nevals: int = 100,
+    logger: Logger = None,
     rng: RandomState,
     relscale_initial: float = 0.3,
     relscale_attenuation: float = 0.9,
     surrogate_model_class: t.Type[SurrogateModel] = SurrogateModelGPR,
-    surrogate_model_args: dict=dict(),
+    surrogate_model_args: dict = dict(),
     acquisition_strategy: AcquisitionStrategy = None,
     evaluation_csv_file: t.TextIO = None,
     model_file: t.TextIO = None,
-    time_source: t.Callable[[], float] = time.time
+    time_source: TimeSource = time.time
 ) -> OptimizationResult:
 
     if logger is None:
@@ -199,27 +210,8 @@ async def minimize(
 
     total_duration = timer(time_source)
 
-    async def evaluate_all(
-        individuals: t.List[Individual], *,
-        rng: RandomState,
-        gen: int,
-    ) -> float:
-        duration = timer(time_source)
-
-        results = await asyncio.gather(*(
-            objective(ind.sample, fork_random_state(rng))
-            for ind in individuals))
-
-        for ind, (fitness, cost) in zip(individuals, results):
-            ind.fitness = fitness
-            ind.cost = cost
-            ind.gen = gen
-            assert ind.is_fully_initialized(), repr(ind)
-
-        return duration()
-
     def fit_next_model(
-        all_evaluations, *, rng, prev_model,
+        all_evaluations, *, rng, prev_model
     ) -> t.Tuple[float, SurrogateModel]:
         duration = timer(time_source)
         model = t.cast(t.Any, surrogate_model_class).estimate(
@@ -237,7 +229,10 @@ async def minimize(
         ind.prediction = 0
         ind.ei = 0.0
 
-    evaluation_duration = await evaluate_all(population, rng=rng, gen=0)
+    evaluation_duration = await _evaluate_all(
+        population, rng=rng, gen=0,
+        time_source=time_source,
+        objective=objective)
     logger.record_evaluations(population, duration=evaluation_duration)
     all_evaluations.extend(population)
 
@@ -250,9 +245,10 @@ async def minimize(
     fmin: float = min(ind.fitness for ind in all_evaluations)
     while len(all_evaluations) < max_nevals:
         generation += 1
-        relscale_bound = \
-            relscale_initial * (relscale_attenuation**(generation - 1))
-        relscale = np.clip(model.length_scales(), None, relscale_bound)
+        relscale = _relscale(
+            generation,
+            initial=relscale_initial, attenuation=relscale_attenuation,
+            length_scales=model.length_scales())
 
         logger.announce_new_generation(
             generation,
@@ -272,8 +268,10 @@ async def minimize(
         logger.record_acquisition(duration=acquisition_duration())
 
         # evaluate new individuals
-        evaluation_duration = await evaluate_all(
-            offspring, rng=rng, gen=generation)
+        evaluation_duration = await _evaluate_all(
+            offspring, rng=rng, gen=generation,
+            time_source=time_source,
+            objective=objective)
         all_evaluations.extend(offspring)
         logger.record_evaluations(offspring, duration=evaluation_duration)
 
@@ -283,23 +281,13 @@ async def minimize(
         logger.record_model(generation, model, duration=fitting_duration)
 
         # select new population
-        selected = []
-        rejected = []
-        for i in range(popsize):
-            a, b = offspring[i], population[i]
-            if b.fitness < a.fitness:
-                a, b = b, a
-            selected.append(a)
-            rejected.append(b)
+        selected, rejected = _select_new_individuals(
+            popsize=popsize, population=population, offspring=offspring)
 
         # replace worst selected elements
-        replace_worst_n = popsize - 3
-        replacement_locations = \
-            np.argsort([ind.fitness for ind in rejected])[:replace_worst_n]
-        selected.extend(rejected[i] for i in replacement_locations)
-        selected = sorted(selected, key=lambda ind: ind.fitness)[:popsize]
+        population = _replace_worst_n_individuals(
+            popsize - 3, population=selected, replacement_pool=rejected)
 
-        population = selected
         fmin = min(fmin, min(ind.fitness for ind in population))
 
     return OptimizationResult(
@@ -307,3 +295,66 @@ async def minimize(
         all_models=all_models,
         duration=total_duration(),
     )
+
+
+async def _evaluate_all(
+    individuals: t.List[Individual], *,
+    rng: RandomState,
+    gen: int,
+    time_source: TimeSource,
+    objective: ObjectiveFunction,
+) -> float:
+    duration = timer(time_source)
+
+    results = await asyncio.gather(*(
+        objective(ind.sample, fork_random_state(rng))
+        for ind in individuals))
+
+    for ind, (fitness, cost) in zip(individuals, results):
+        ind.fitness = fitness
+        ind.cost = cost
+        ind.gen = gen
+        assert ind.is_fully_initialized(), repr(ind)
+
+    return duration()
+
+
+def _relscale(
+    gen: int, *,
+    initial: float,
+    attenuation: float,
+    length_scales: np.ndarray,
+) -> np.ndarray:
+    r"""min(length_scales, attenuated global relscale)"""
+    global_bound = initial * (attenuation**(gen - 1))
+    return np.clip(length_scales, None, global_bound)
+
+
+def _select_new_individuals(
+    *,
+    popsize: int,
+    population: t.List[Individual],
+    offspring: t.List[Individual],
+) -> t.Tuple[t.List[Individual], t.List[Individual]]:
+    assert len(population) == len(offspring) == popsize
+    selected = []
+    rejected = []
+    for ind_sel, ind_rej in zip(population, offspring):
+        if ind_rej.fitness < ind_sel.fitness:
+            ind_sel, ind_rej = ind_rej, ind_sel
+        selected.append(ind_sel)
+        rejected.append(ind_rej)
+    return selected, rejected
+
+
+def _replace_worst_n_individuals(
+    n_worst: int, *,
+    population: t.List[Individual],
+    replacement_pool: t.List[Individual],
+) -> t.List[Individual]:
+    assert n_worst <= len(population)
+    assert n_worst <= len(replacement_pool)
+
+    by_fitness = operator.attrgetter('fitness')
+    replacement = sorted(replacement_pool, key=by_fitness)[:n_worst]
+    return sorted(population + replacement, key=by_fitness)[:-n_worst]

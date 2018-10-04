@@ -1,5 +1,4 @@
 import pytest  # type: ignore
-import functools
 import numpy as np  # type: ignore
 
 
@@ -92,6 +91,7 @@ def describe_gpr():
         def it_should_have_more_uncertainty_for_extrapolation(model):
             assert model.uncertainty(0.0) > 10 * model.uncertainty(0.3)
             assert model.uncertainty(1.0) > 10 * model.uncertainty(0.3)
+
 
 def describe_params():
 
