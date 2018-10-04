@@ -153,6 +153,18 @@ class OptimizationResult:
         return sorted(self.all_individuals, key=lambda ind: ind.fitness)[:n]
 
     @property
+    def model(self) -> SurrogateModel:
+        return self.all_models[-1]
+
+    @property
+    def xs(self) -> np.ndarray:
+        return np.array([ind.sample for ind in self.all_individuals])
+
+    @property
+    def ys(self) -> np.ndarray:
+        return np.array([ind.fitness for ind in self.all_individuals])
+
+    @property
     def fmin(self) -> float:
         return self.best_individual.fitness
 
