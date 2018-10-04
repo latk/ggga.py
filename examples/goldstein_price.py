@@ -34,8 +34,9 @@ async def run_example(*, rng: RandomState, n_samples: int = 50):
     print(f"Minimum after {n_samples} random samples: (None), "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")
 
-    fig, _ = viz.plot_objective(
-        xs, ys, space=SPACE, model=model, rng=rng)
+    fig, _ = viz \
+        .PartialDependence(model=model, space=SPACE, rng=rng) \
+        .plot_grid(xs, ys)
     fig.suptitle(f"Goldstein-Price ({n_samples} random samples)")
 
     # do a proper GGGA-run
@@ -45,8 +46,9 @@ async def run_example(*, rng: RandomState, n_samples: int = 50):
     print(f"Minimum after {n_samples} GGGA-samples: {res.fmin:.2f}, "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")
 
-    fig, _ = viz.plot_objective(
-        res.xs, res.ys, space=SPACE, model=res.model, rng=rng)
+    fig, _ = viz \
+        .PartialDependence(model=model, space=SPACE, rng=rng) \
+        .plot_grid(xs, ys)
     fig.suptitle(f"Goldstein-Price ({n_samples} GGGA-samples)")
 
 

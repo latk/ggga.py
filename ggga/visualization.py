@@ -1,244 +1,246 @@
+import typing as t
+
+import attr
 import matplotlib.pyplot as plt  # type: ignore
 import seaborn as sns  # type: ignore
 import numpy as np  # type: ignore
-import typing as t
-from .minimize import Individual
+from numpy.random import RandomState  # type: ignore
 
+from .minimize import Individual
 from . import SurrogateModel, Space
 
 
-def partial_dependence(
-    space, model, i, j=None, *,
-    samples_transformed, n_points, n_samples=None, rng,
-) -> tuple:
+@attr.s(frozen=True)
+class DualDependenceStyle:
+    cmap: str = 'viridis_r'
+    contour_args: t.Optional[dict] = None
+    contour_filled: bool = True
+    contour_filled_args: t.Optional[dict] = None
+    contour_levels: int = 10
+    contour_lines: bool = False
+    contour_lines_args: t.Optional[dict] = None
+    contour_scatter_args: t.Optional[dict] = None
+    contour_xmin_scatter_args: t.Optional[dict] = None
+    subplot_size: float = 2
+    scatter_args: t.Optional[dict] = None
+    xmin_scatter_args: t.Optional[dict] = None
 
-    if samples_transformed is None:
-        assert n_samples is not None, \
-            "n_samples required to generate samples_transformed"
-        samples_transformed = np.array([
+    def get_contour_filled_args(self) -> dict:
+        return _merge_dicts(
+            dict(locator=None, cmap=self.cmap, alpha=0.8),
+            self.contour_args,
+            self.contour_filled_args,
+        )
+
+    def get_contour_line_args(self) -> dict:
+        return _merge_dicts(
+            dict(locator=None, colors='k', linewidths=1),
+            self.contour_args,
+            self.contour_lines_args,
+        )
+
+    def get_scatter_args(self) -> dict:
+        return _merge_dicts(
+            dict(c='k', s=10, lw=0),
+            self.scatter_args,
+        )
+
+    def get_xmin_scatter_args(self) -> dict:
+        return _merge_dicts(
+            self.get_scatter_args(),
+            dict(c='r'),
+            self.xmin_scatter_args,
+        )
+
+
+class PartialDependence:
+    def __init__(
+        self, *,
+        model: SurrogateModel,
+        space: Space,
+        rng: RandomState,
+        resolution: int = 40,
+        quality: int = 250,
+    ) -> None:
+        self.model: SurrogateModel = model
+        self.space: Space = space
+        self._resolution: int = resolution
+        self._samples_transformed: np.ndarray = np.array([
             space.into_transformed(space.sample(rng=rng))
-            for _ in range(n_samples)
+            for _ in range(quality)
         ])
 
-    def transformed_bounds_linspace(param, n_points):
-        return np.linspace(*param.transformed_bounds(), n_points)
+    def along_one_dimension(
+        self, dim: int,
+    ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        samples_transformed = np.array(self._samples_transformed)
+        xs_transformed = np.linspace(0.0, 1.0, self._resolution)
 
-    # one-dimensional case
-    if j is None:
-        xi_transformed = transformed_bounds_linspace(
-            space.params[i], n_points)
-        yi = np.zeros(n_points)
-        stdi = np.zeros(n_points)
-        for n, x in enumerate(xi_transformed):
-            real_transformed_samples = np.array(samples_transformed)
-            real_transformed_samples[:, i] = x
-            y, std = model.predict_transformed_a(real_transformed_samples)
-            yi[n] = np.mean(y)
+        ys = np.zeros(self._resolution)
+        stds = np.zeros(self._resolution)
+
+        for i, x in enumerate(xs_transformed):
+            samples_transformed[:, dim] = x
+            y, std = self.model.predict_transformed_a(samples_transformed)
+            ys[i] = np.mean(y)
             # IDEALLY: std(a + b) = sqrt(var(a) + var(b) - cov(a, b))
             # NOT: mean of stdev
             # INSTEAD: mean of variance
-            stdi[n] = np.sqrt(np.mean(std**2))
-        return xi_transformed, yi, stdi
+            stds[i] = np.sqrt(np.mean(std**2))
 
-    # two-dimensional case
-    xi_transformed = transformed_bounds_linspace(
-            space.params[j], n_points)
-    yi_transformed = transformed_bounds_linspace(
-            space.params[i], n_points)
-    zi = []
-    for x in xi_transformed:
-        row = []
-        for y in yi_transformed:
-            real_transformed_samples = np.array(samples_transformed)
-            real_transformed_samples[:, (j, i)] = (x, y)
-            row.append(np.mean(model.predict_transformed_a(
-                real_transformed_samples, return_std=False)))
-        zi.append(row)
-    return xi_transformed, yi_transformed, np.array(zi).T
+        xs = self.space.params[dim].from_transformed_a(xs_transformed)
+        return xs, ys, stds
 
+    def along_two_dimensions(
+        self, dim_1: int, dim_2: int,
+    ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        samples_transformed = np.array(self._samples_transformed)
+        xs_transformed = np.linspace(0.0, 1.0, self._resolution)
 
-def plot_objective(
-    xs, ys, *,
-    x_min=None,
-    model: SurrogateModel,
-    space: Space,
-    contour_levels: int=10,
-    n_points: int=40,
-    n_samples: int=250,
-    subplot_size: float=2,
-    rng: np.random.RandomState,
-    cmap='viridis_r',
-    contour_filled: bool = True,
-    contour_lines: bool = False,
-    contour_scatter_args=None,
-    contour_xmin_scatter_args=None,
-    contour_args=None,
-    contour_filled_args=None,
-    contour_lines_args=None,
-) -> t.Tuple[t.Any, t.Any]:
-    n_dims = space.n_dims
+        ys = np.zeros((self._resolution, self._resolution))
 
-    if x_min is None:
-        x_min = xs[np.argmin(ys)]
+        for i, x_1 in enumerate(xs_transformed):
+            for j, x_2 in enumerate(xs_transformed):
+                samples_transformed[:, (dim_1, dim_2)] = (x_1, x_2)
+                y = self.model.predict_transformed_a(
+                    samples_transformed, return_std=False)
+                ys[i, j] = np.mean(y)
 
-    samples_transformed = [
-        space.into_transformed(space.sample(rng=rng))
-        for _ in range(n_samples)
-    ]
+        xs_1 = self.space.params[dim_1].from_transformed_a(xs_transformed)
+        xs_2 = self.space.params[dim_2].from_transformed_a(xs_transformed)
+        return xs_1, xs_2, ys
 
-    fig, ax = plt.subplots(
-        n_dims, n_dims,
-        figsize=(subplot_size * n_dims, subplot_size * n_dims),
-        squeeze=False)
+    def plot_grid(
+        self, x_observed, y_observed, *,
+        x_min=None,
+        style: DualDependenceStyle = None,
+    ) -> t.Tuple[t.Any, t.Any]:
 
-    for row in range(n_dims):
-        # plot single-variable dependence on diagonal
-        param_row = space.params[row]
-        print("[INFO] dependence plot 1D {} ({})".format(row, param_row.name))
-        ax_ii = ax[row, row]
-        plot_single_variable_dependence(
-            ax_ii, row,
-            xs=xs, ys=ys, x_min=x_min,
-            space=space,
-            model=model,
-            samples_transformed=samples_transformed,
-            n_points=n_points,
-            n_samples=n_samples,
-            rng=rng,
-        )
-        ax_ii.set_title(param_row.name + "\n")
-        ax_ii.yaxis.tick_right()
-        ax_ii.xaxis.tick_top()
+        n_dims = self.space.n_dims
 
-        for col in range(row):
-            # plot two-variable dependence on lower triangle
-            param_col = space.params[col]
-            print("[INFO] dependence plot {} x {} ({} x {})".format(
-                row, col, param_row.name, param_col.name))
-            xi_transformed, yi_transformed, zi = partial_dependence(
-                space, model, row, col,
-                samples_transformed=samples_transformed,
-                n_points=n_points,
-                rng=rng)
-            xi = param_col.from_transformed_a(xi_transformed)
-            yi = param_row.from_transformed_a(yi_transformed)
-            ax_ij = ax[row, col]
-            plot_dual_variable_dependence(
-                ax_ij, col, row,
-                xi=xi, yi=yi, zi=zi, xs=xs, x_min=x_min,
-                param_x=param_col, param_y=param_row,
-                contour_levels=contour_levels, cmap=cmap,
-                show_xticks=(row == n_dims - 1),
-                show_yticks=(col == 0),
-                filled=contour_filled,
-                lines=contour_lines,
-                scatter_args=contour_scatter_args,
-                xmin_scatter_args=contour_xmin_scatter_args,
-                contour_args=contour_args,
-                contour_filled_args=contour_filled_args,
-                contour_lines_args=contour_lines_args,
+        if style is None:
+            style = DualDependenceStyle()
+        assert style is not None  # for type checker
+
+        if x_min is None:
+            x_min = x_observed[np.argmin(y_observed)]
+
+        fig, axes = plt.subplots(
+            n_dims, n_dims,
+            figsize=(style.subplot_size * n_dims, style.subplot_size * n_dims),
+            squeeze=False)
+
+        for row in range(n_dims):
+            # plot single-variable dependence on diagonal
+            param_row = self.space.params[row]
+            print("[INFO] dependence plot 1D {} ({})".format(
+                row, param_row.name))
+
+            ax = axes[row, row]
+            plot_single_variable_dependence(
+                ax, row,
+                x_observed=x_observed,
+                y_observed=y_observed,
+                x_observed_min=x_min,
+                partial_dependence=self,
             )
 
-        # hide top right triangle
-        for col in range(row + 1, n_dims):
-            ax[row, col].axis('off')
+            ax.set_title(param_row.name + "\n")
+            ax.yaxis.tick_right()
+            ax.xaxis.tick_top()
 
-    fig.tight_layout()
-    fig.subplots_adjust(
-        # left=0.05, right=0.95, bottom=0.05, top=0.95,
-        hspace=0.03, wspace=0.03)
-    return fig, ax
+            for col in range(row):
+                # plot two-variable dependence on lower triangle
+                param_col = self.space.params[col]
+                print("[INFO] dependence plot {} x {} ({} x {})".format(
+                    row, col, param_row.name, param_col.name))
+
+                ax = axes[row, col]
+                plot_dual_variable_dependence(
+                    ax, col, row,
+                    partial_dependence=self,
+                    x_observed=x_observed, x_observed_min=x_min,
+                    style=style,
+                )
+
+                if row != n_dims - 1:
+                    ax.tick_params(
+                        'x', top=False, bottom=False, labelbottom=False)
+                if col != 0:
+                    ax.tick_params(
+                        'y', left=False, right=False, labelleft=False)
+
+            # hide top right triangle
+            for col in range(row + 1, n_dims):
+                axes[row, col].axis('off')
+
+        fig.tight_layout()
+        fig.subplots_adjust(
+            # left=0.05, right=0.95, bottom=0.05, top=0.95,
+            hspace=0.03, wspace=0.03)
+        return fig, axes
 
 
 def plot_single_variable_dependence(
-    ax, i, *,
-    xs, ys,
-    x_min,
-    space, model,
-    samples_transformed,
-    n_points: int,
-    n_samples: int = None,
-    rng: np.random.RandomState,
+    ax, dim, *,
+    x_observed, y_observed, x_observed_min,
+    partial_dependence: PartialDependence,
     scatter_args=dict(c='g', s=10, lw=0, alpha=0.5),
     minline_args=dict(linestyle='--', color='r', lw=1),
-):
-    param = space.params[i]
+) -> None:
 
-    xi_transformed, yi, stdi = partial_dependence(
-            space, model, i,
-            samples_transformed=None,
-            n_points=n_points,
-            n_samples=n_samples,
-            rng=rng)
-    xi = param.from_transformed_a(xi_transformed)
+    xs, ys, std = partial_dependence.along_one_dimension(dim)
 
-    ax.fill_between(xi, yi - 1.96*stdi, yi + 1.96*stdi, color='b', alpha=0.15)
-    ax.scatter([x[i] for x in xs], ys, **scatter_args)
-    ax.plot(xi, yi, c='b')
-    if x_min is not None:
-        ax.axvline(x_min[i], **minline_args)
-    x_bounds = param.bounds()
-    if x_bounds is not None:
-        ax.set_xlim(*x_bounds)
+    ax.scatter([x[dim] for x in x_observed], y_observed, **scatter_args)
+
+    ax.fill_between(xs, ys - 2*std, ys + 2*std, color='b', alpha=0.15)
+    ax.plot(xs, ys, c='b')
+
+    if x_observed_min is not None:
+        ax.axvline(x_observed_min[dim], **minline_args)
+
+    bounds = partial_dependence.space.params[dim].bounds()
+    if bounds is not None:
+        ax.set_xlim(*bounds)
 
 
 def plot_dual_variable_dependence(
-    ax, i, j, *,
-    xi, yi, zi,
-    xs,
-    x_min,
-    param_x, param_y,
-    contour_levels,
-    cmap,
-    scatter_args=None,
-    xmin_scatter_args=None,
-    show_xticks: bool,
-    show_yticks: bool,
-    filled: bool = True,
-    lines: bool = False,
-    contour_args=None,
-    contour_filled_args=None,
-    contour_lines_args=None,
-):
-    cfa = dict(locator=None, cmap=cmap, alpha=0.8)
-    for args in (contour_args, contour_filled_args):
-        if args is not None:
-            cfa.update(args)
+    ax, dim_1, dim_2, *,
+    partial_dependence: PartialDependence,
+    x_observed,
+    x_observed_min,
+    style: DualDependenceStyle,
+) -> None:
 
-    cla = dict(locator=None, colors='k', linewidths=1)
-    for args in (contour_args, contour_lines_args):
-        if args is not None:
-            cla.update(args)
+    x_2, x_1, ys = partial_dependence.along_two_dimensions(dim_2, dim_1)
 
-    sca = dict(c='k', s=10, lw=0)
-    if scatter_args is not None:
-        sca.update(scatter_args)
+    if style.contour_filled:
+        ax.contourf(
+            x_1, x_2, ys, style.contour_levels,
+            **style.get_contour_filled_args())
 
-    xsca = dict(sca)
-    xsca.update(c='r')
-    if xmin_scatter_args is not None:
-        xsca.update(xmin_scatter_args)
+    if style.contour_lines:
+        ax.contour(
+            x_1, x_2, ys, style.contour_levels,
+            **style.get_contour_line_args())
 
-    # start drawing plots
+    ax.scatter(
+        [x[dim_1] for x in x_observed],
+        [x[dim_2] for x in x_observed],
+        **style.get_scatter_args(),
+    )
+    ax.scatter(
+        x_observed_min[dim_1],
+        x_observed_min[dim_2],
+        **style.get_xmin_scatter_args(),
+    )
 
-    if filled:
-        ax.contourf(xi, yi, zi, contour_levels, **cfa)
-
-    if lines:
-        ax.contour(xi, yi, zi, contour_levels, **cla)
-
-    ax.scatter([x[i] for x in xs], [x[j] for x in xs], **sca)
-    ax.scatter(x_min[i], x_min[j], **xsca)
-    x_bounds = param_x.bounds()
-    if x_bounds is not None:
-        ax.set_xlim(*x_bounds)
-    y_bounds = param_y.bounds()
-    if y_bounds is not None:
-        ax.set_ylim(*y_bounds)
-    if not show_xticks:
-        ax.tick_params('x', top=False, bottom=False, labelbottom=False)
-    if not show_yticks:
-        ax.tick_params('y', left=False, right=False, labelleft=False)
+    bounds_1 = partial_dependence.space.params[dim_1].bounds()
+    bounds_2 = partial_dependence.space.params[dim_2].bounds()
+    if bounds_1 is not None:
+        ax.set_xlim(*bounds_1)
+    if bounds_2 is not None:
+        ax.set_ylim(*bounds_2)
 
 
 def plot_convergence(all_evaluations: t.List[Individual]):
@@ -252,8 +254,8 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     prev_min_fitness = np.inf
     min_fitness = []
     for generation in ind_by_generation:
-        f = min(ind.fitness for ind in generation)
-        prev_min_fitness = min(prev_min_fitness, f)
+        fitness = min(ind.fitness for ind in generation)
+        prev_min_fitness = min(prev_min_fitness, fitness)
         min_fitness.append(prev_min_fitness)
 
     fig, (utility_ax, ei_ax) = plt.subplots(2, 1, sharex=True)
@@ -318,3 +320,11 @@ def plot_observations_against_model(
     if fig is not None:
         fig.tight_layout()
     return fig
+
+
+def _merge_dicts(*optional_dictionaries: t.Optional[dict]) -> dict:
+    merged = dict()
+    for optional_dict in optional_dictionaries:
+        if optional_dict is not None:
+            merged.update(optional_dict)
+    return merged
