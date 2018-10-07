@@ -1,13 +1,15 @@
 import abc
 import typing as t
-from .surrogate_model import SurrogateModel
-from .util import minimize_by_gradient, TNumpy
-from .individual import Individual
-from .space import Space
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import attr
 import scipy.stats  # type: ignore
+
+from .surrogate_model import SurrogateModel
+from .util import minimize_by_gradient, TNumpy
+from .individual import Individual
+from .space import Space
 
 Sample = list
 IterableIndividuals = t.Iterable[Individual]
@@ -27,7 +29,7 @@ class AcquisitionStrategy(abc.ABC):
 
 class ChainedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
-        self.strategies: t.Collection[AcquisitionStrategy] = strategies
+        self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -45,7 +47,7 @@ class ChainedAcquisition(AcquisitionStrategy):
 
 class HedgedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
-        self.strategies: t.Collection[AcquisitionStrategy] = strategies
+        self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -210,29 +212,19 @@ class GradientAcquisition(AcquisitionStrategy):
         model: SurrogateModel, relscale: np.ndarray, rng: RandomState,
         fmin: float,
     ):
-        for parent in population:
-            ind = self._one_step(
-                parent, model=model, relscale=relscale, rng=rng, fmin=fmin)
-            yield ind
+        def suggest_neighbor(transformed: Sample) -> Sample:
+            return self.space.mutate_transformed(
+                transformed, relscale=relscale, rng=rng)
 
-    def _one_step(
-        self, parent: Individual, *,
-        model: SurrogateModel, relscale: np.ndarray, rng: RandomState,
-        fmin: float,
-    ):
-        parent_sample_transformed = self.space.into_transformed(
-            parent.sample)
+        def objective(transformed: Sample) -> float:
+            mean, std = model.predict_transformed_a(transformed)
+            return -expected_improvement(mean[0], std[0], fmin)
 
-        def objective(sample_transformed: Sample) -> float:
-            mean, std = model.predict_transformed_a(sample_transformed)
-            ei = expected_improvement(mean[0], std[0], fmin)
-            return -ei
-
-        def minimize_neg_ei(
-            sample_transformed: Sample,
+        def optimize_via_gradient(
+            transformed: Sample,
         ) -> t.Tuple[Sample, float]:
             opt_sample, opt_fitness = minimize_by_gradient(
-                objective, sample_transformed,
+                objective, transformed,
                 approx_grad=True,
                 bounds=[p.transformed_bounds() for p in self.space.params],
             )
@@ -240,38 +232,45 @@ class GradientAcquisition(AcquisitionStrategy):
                 f"optimized sample (transformed) not valid: {opt_sample}"
             return opt_sample, opt_fitness
 
-        optimal_sample_transformed, optimal_fitness = minimize_neg_ei(
+        for parent in population:
+            sample = self._optimize_sample_with_restart(
+                self.space.into_transformed(parent.sample),
+                suggest_neighbor=suggest_neighbor,
+                optimize_sample=optimize_via_gradient,
+            )
+
+            vec_mean, vec_std = model.predict_transformed_a([sample])
+
+            yield Individual(
+                self.space.from_transformed(sample),
+                prediction=vec_mean[0],
+                ei=expected_improvement(vec_mean[0], vec_std[0], fmin))
+
+    def _optimize_sample_with_restart(
+        self, parent_sample_transformed: Sample, *,
+        suggest_neighbor: t.Callable[[Sample], Sample],
+        optimize_sample: t.Callable[[Sample], t.Tuple[Sample, float]],
+    ):
+        optimal_sample_transformed, optimal_fitness = optimize_sample(
             parent_sample_transformed)
 
         for _ in range(self.breadth):
-            starting_point = self.space.mutate_transformed(
-                parent_sample_transformed, relscale=relscale, rng=rng)
-
             candidate_sample_transformed, candidate_fitness = \
-                minimize_neg_ei(starting_point)
+                optimize_sample(
+                    suggest_neighbor(
+                        parent_sample_transformed))
 
             if candidate_fitness < optimal_fitness:
                 optimal_sample_transformed = candidate_sample_transformed
                 optimal_fitness = candidate_fitness
 
-        # # add a bit of jitter
-        # optimal_sample_transformed = self.space.mutate_transformed(
-        #     optimal_sample_transformed,
-        #     relscale=relscale * self.jitter_factor,
-        #     rng=rng,
-        # )
-
-        optimal_mean, optimal_std = model.predict_transformed_a(
-            optimal_sample_transformed)
-
-        return Individual(
-            self.space.from_transformed(optimal_sample_transformed),
-            prediction=optimal_mean[0],
-            ei=expected_improvement(optimal_mean, optimal_std, fmin)[0])
+        return optimal_sample_transformed
 
 
-def expected_improvement(mean: TNumpy, std: TNumpy, fmin: float) -> TNumpy:
+def expected_improvement(
+    vec_mean: TNumpy, vec_std: TNumpy, fmin: float,
+) -> TNumpy:
     norm = scipy.stats.norm
-    z = -(mean - fmin) / std
-    ei = -(mean - fmin) * norm.cdf(z) + std * norm.pdf(z)
-    return ei
+    vec_z = -(vec_mean - fmin) / vec_std
+    vec_ei = -(vec_mean - fmin) * norm.cdf(vec_z) + vec_std * norm.pdf(vec_z)
+    return vec_ei
