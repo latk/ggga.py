@@ -1,5 +1,6 @@
 import abc
 import typing as t
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 
@@ -7,57 +8,65 @@ T = t.TypeVar('T')
 
 
 class Param(abc.ABC, t.Generic[T]):
-    def __init__(self, name: str, *, flag: str, format: str) -> None:
-        self.name = name
-        self.flag = flag
-        self.format = format
+    def __init__(
+        self, name: str, *, flag: str, fmt: str,
+    ) -> None:
+        self.name: str = name
+        self.flag: str = flag
+        self.fmt: str = fmt
 
     @abc.abstractmethod
-    def sample(self, *, rng: RandomState, lo=None, hi=None) -> T:
-        pass
+    def sample(
+        self, *, rng: RandomState, lo: T = None, hi: T = None,
+    ) -> T:
+        raise NotImplementedError
 
     @abc.abstractmethod
-    def mutate_transformed(self, value, *, rng: RandomState, relscale: float):
-        pass
+    def mutate_transformed(
+        self, value: float, *, rng: RandomState, relscale: float,
+    ) -> float:
+        raise NotImplementedError
 
-    def mutate(self, value: T, *, rng: RandomState, relscale: float) -> T:
-        return self.from_transformed(self.mutate_transformed(
-            self.into_transformed(value),
-            rng=rng,
-            relscale=relscale))
+    def mutate(
+        self, value: T, *, rng: RandomState, relscale: float,
+    ) -> T:
+        value_transformed = self.into_transformed(value)
+        value_mutated = self.mutate_transformed(
+            value_transformed, rng=rng, relscale=relscale)
+        return self.from_transformed(value_mutated)
 
     @abc.abstractproperty
-    def size(self):
-        pass
+    def size(self) -> T:
+        raise NotImplementedError
 
     @abc.abstractmethod
     def is_valid(self, value: T) -> bool:
-        pass
+        raise NotImplementedError
 
     @abc.abstractmethod
-    def is_valid_transformed(self, value) -> bool:
-        pass
+    def is_valid_transformed(self, value: float) -> bool:
+        raise NotImplementedError
 
     @abc.abstractmethod
-    def into_transformed(self, value: T):
-        pass
+    def into_transformed(self, value: T) -> float:
+        raise NotImplementedError
 
     @abc.abstractmethod
-    def from_transformed(self, value) -> T:
-        pass
+    def from_transformed(self, value: float) -> T:
+        raise NotImplementedError
 
-    def into_transformed_a(self, values: list) -> list:
+    def into_transformed_a(self, values: t.List[T]) -> t.List[float]:
         return [self.into_transformed(x) for x in values]
 
-    def from_transformed_a(self, values: list) -> list:
+    def from_transformed_a(self, values: t.List[float]) -> t.List[T]:
         return [self.from_transformed(x) for x in values]
 
     @abc.abstractmethod
-    def transformed_bounds(self) -> tuple:
-        pass
+    def transformed_bounds(self) -> t.Tuple[float, float]:
+        raise NotImplementedError
 
-    def bounds(self) -> t.Optional[t.Tuple[T, T]]:
-        return None
+    def bounds(self) -> t.Tuple[T, T]:
+        raise NotImplementedError
 
 
 class Integer(Param[int]):
@@ -66,9 +75,9 @@ class Integer(Param[int]):
 
     def __init__(
         self, name: str, flag: str, lo: int, hi: int, *,
-        format: str = '{}',
+        fmt: str = '{}',
     ) -> None:
-        super().__init__(name, flag=flag, format=format)
+        super().__init__(name, flag=flag, fmt=fmt)
         self.lo = lo
         self.hi = hi
 
@@ -80,8 +89,8 @@ class Integer(Param[int]):
     def sample(
         self, *,
         rng: RandomState,
-        lo: int=None,
-        hi: int=None,
+        lo: int = None,
+        hi: int = None,
     ) -> int:
         if lo is None:
             lo = self.lo
@@ -114,7 +123,8 @@ class Integer(Param[int]):
     def is_valid(self, value: int) -> bool:
         return self.lo <= value <= self.hi
 
-    def is_valid_transformed(self, value: float) -> bool:
+    @staticmethod
+    def is_valid_transformed(value: float) -> bool:
         return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: int) -> float:
@@ -123,7 +133,8 @@ class Integer(Param[int]):
     def from_transformed(self, value: float) -> int:
         return int(np.round(value * self.size + self.lo))
 
-    def transformed_bounds(self) -> t.Tuple[float, float]:
+    @staticmethod
+    def transformed_bounds() -> t.Tuple[float, float]:
         return (0.0, 1.0)
 
     def bounds(self) -> t.Tuple[int, int]:
@@ -147,12 +158,12 @@ class Real(Param[float]):
     def __init__(
         self, name: str, flag: str, lo: float, hi: float, *,
         scale: Scale = None,
-        format: str = '{:.5f}',
+        fmt: str = '{:.5f}',
     ) -> None:
-        super().__init__(name, flag=flag, format=format)
-        self.lo = lo
-        self.hi = hi
-        self.scale = scale
+        super().__init__(name, flag=flag, fmt=fmt)
+        self.lo: float = lo
+        self.hi: float = hi
+        self.scale: t.Optional[Scale] = scale
 
         if scale is not None:
             assert isinstance(scale, Scale)
@@ -166,8 +177,8 @@ class Real(Param[float]):
     def sample(
         self, *,
         rng: RandomState,
-        lo: float=None,
-        hi: float=None,
+        lo: float = None,
+        hi: float = None,
     ) -> float:
         if lo is None:
             lo = self.lo
@@ -183,8 +194,9 @@ class Real(Param[float]):
             hi=self.into_transformed(hi),
         ))
 
+    @staticmethod
     def sample_transformed(
-        self, *, rng: RandomState, lo: float, hi: float,
+        *, rng: RandomState, lo: float, hi: float,
     ) -> float:
         assert 0.0 <= lo <= hi <= 1.0, \
             f'bounds [{lo},{hi}] must be within [0,1]'
@@ -212,7 +224,8 @@ class Real(Param[float]):
     def is_valid(self, value: float) -> bool:
         return self.lo <= value <= self.hi
 
-    def is_valid_transformed(self, value: float) -> bool:
+    @staticmethod
+    def is_valid_transformed(value: float) -> bool:
         return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: float) -> float:
@@ -238,7 +251,8 @@ class Real(Param[float]):
 
         return x
 
-    def transformed_bounds(self) -> t.Tuple[float, float]:
+    @staticmethod
+    def transformed_bounds() -> t.Tuple[float, float]:
         return (0.0, 1.0)
 
     def bounds(self) -> t.Tuple[float, float]:
@@ -259,12 +273,17 @@ class Log1pScale(Scale):
         return np.expm1(x * self._output_size) / self._scale
 
 
-class Space(object):
+Sample = t.List[float]
+ConstraintFunction = t.Callable[[Sample], bool]
+BoundSuggestionFunction = t.Callable[[Sample], dict]
+
+
+class Space:
 
     def __init__(
         self, *params: Param,
-        constraints: t.List[t.Callable[[list], bool]]=None,
-        constrained_bounds_suggestions: t.List[t.Callable[[list], dict]]=None,
+        constraints: t.List[ConstraintFunction] = None,
+        constrained_bounds_suggestions: t.List[BoundSuggestionFunction] = None,
     ) -> None:
         if constraints is None:
             constraints = []
@@ -276,65 +295,65 @@ class Space(object):
         self.constrained_bounds_suggestions = constrained_bounds_suggestions
 
         seen_names: t.Set[str] = set()
-        for p in params:
-            assert isinstance(p, Param), f'must be a param: {p!r}'
-            assert p.name not in seen_names, \
-                f'param names must be unique: {p.name}'
-            seen_names.add(p.name)
+        for param in params:
+            assert isinstance(param, Param), f'must be a param: {param!r}'
+            assert param.name not in seen_names, \
+                f'param names must be unique: {param.name}'
+            seen_names.add(param.name)
 
         assert all(callable(c) for c in constraints)
         assert all(callable(s) for s in constrained_bounds_suggestions)
 
     def __repr__(self):
-        s = 'Space('
+        out = 'Space('
         for param in self.params:
-            s += f'\n  {param!r},'
-        s += '\n  constraints=['
+            out += f'\n  {param!r},'
+        out += '\n  constraints=['
         for constraint in self.constraints:
-            s += f'\n    {constraint}'
-        s += '],'
-        s += '\n  constrained_bounds_suggestions=['
+            out += f'\n    {constraint}'
+        out += '],'
+        out += '\n  constrained_bounds_suggestions=['
         for suggestion in self.constrained_bounds_suggestions:
-            s += f'\n    {suggestion}'
-        s += '],'
-        s += '\n)'
-        return s
+            out += f'\n    {suggestion}'
+        out += '],'
+        out += '\n)'
+        return out
 
     @property
     def n_dims(self) -> int:
         return len(self.params)
 
-    def sample(self, *, rng: RandomState) -> list:
+    def sample(self, *, rng: RandomState) -> Sample:
         retries = 10
         bounds: t.Dict[str, tuple] = dict()
 
-        def merge_lo_hi(llo, lhi, rlo, rhi):
-            if   llo is None:   lo = rlo            # noqa
-            elif rlo is None:   lo = llo            # noqa
-            else:               lo = max(llo, rlo)  # noqa
-
-            if   lhi is None:   hi = rhi            # noqa
-            elif rhi is None:   hi = lhi            # noqa
-            else:               hi = min(lhi, rhi)  # noqa
+        def merge_intervals(*intervals):
+            lows, highs = zip(intervals)
+            lo = max((lo for lo in lows if lo is not None), default=None)
+            hi = max((hi for hi in highs if hi is not None), default=None)
 
             if lo is not None and hi is not None:
                 assert lo <= hi
+
             return lo, hi
 
         for _ in range(retries):
-            s = []
+            the_sample = []
+
             for param in self.params:
                 lo, hi = bounds.get(param.name, (None, None))
-                s.append(param.sample(rng=rng, lo=lo, hi=hi))
-            if all(c(s) for c in self.constraints):
-                return s
+                the_sample.append(param.sample(rng=rng, lo=lo, hi=hi))
+
+            if all(c(the_sample) for c in self.constraints):
+                return the_sample
+
             for suggestion in self.constrained_bounds_suggestions:
-                for k, v in suggestion(s).items():
-                    if v is None:
+                for name, suggested_bounds in suggestion(the_sample).items():
+                    if suggested_bounds is None:
                         continue
-                    llo, lhi = bounds.get(k, (None, None))
-                    rlo, rhi = v
-                    bounds[k] = merge_lo_hi(llo, lhi, rlo, rhi)
+                    old_bounds = bounds.get(name, (None, None))
+                    bounds[name] = merge_intervals(
+                        old_bounds, suggested_bounds)
 
         raise RuntimeError("Could not find valid sample")
 
