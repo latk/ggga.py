@@ -7,9 +7,9 @@ import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
-from ggga.benchmark_functions import goldstein_price
-from ggga import Space, Real, SurrogateModelGPR, minimize
-import ggga.visualization as viz
+from ..benchmark_functions import goldstein_price
+from .. import Space, Real, SurrogateModelGPR, minimize
+from ..visualization import PartialDependence
 
 
 SPACE = Space(
@@ -43,8 +43,7 @@ async def run_example(*, rng: RandomState, n_samples: int, log_y: bool):
     print(f"Minimum after {n_samples} random samples: (None), "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")
 
-    fig, _ = viz \
-        .PartialDependence(model=model, space=SPACE, rng=rng) \
+    fig, _ = PartialDependence(model=model, space=SPACE, rng=rng) \
         .plot_grid(xs, ys)
     fig.suptitle(f"Goldstein-Price ({n_samples} random samples)")
 
@@ -55,8 +54,7 @@ async def run_example(*, rng: RandomState, n_samples: int, log_y: bool):
     print(f"Minimum after {n_samples} GGGA-samples: {res.fmin:.2f}, "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")
 
-    fig, _ = viz \
-        .PartialDependence(model=res.model, space=SPACE, rng=rng) \
+    fig, _ = PartialDependence(model=res.model, space=SPACE, rng=rng) \
         .plot_grid(res.xs, res.ys)
     fig.suptitle(f"Goldstein-Price ({n_samples} GGGA-samples)")
 
