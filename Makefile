@@ -1,11 +1,13 @@
-.PHONY: all test lint install-dev examples-no-interactive
+.PHONY: all qa test lint install-dev examples-no-interactive
 
 PYTHON ?= python
 
 all:
 	# nothing
 
-test: lint
+qa: lint test examples-no-interactive
+
+test:
 	$(PYTHON) -m pytest ggga --doctest-modules
 
 lint:
@@ -17,4 +19,4 @@ install-dev:
 	$(PYTHON) -m pip install -e .[dev]
 
 examples-no-interactive:
-	time $(PYTHON) ./examples/goldstein_price.py --no-interactive >/dev/null
+	time $(PYTHON) -m ggga.examples.goldstein_price --no-interactive >/dev/null
