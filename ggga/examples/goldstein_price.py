@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt  # type: ignore
 from .. import Space, Real, minimize
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
 from ..benchmark_functions import goldstein_price
+from ..outputs import Output
 from ..visualization import PartialDependence
 
 
@@ -23,7 +24,9 @@ X_MIN = [0.0, -1.0]
 
 async def run_example(
     *,
-    rng: RandomState, n_samples: int, log_y: bool,
+    rng: RandomState, n_samples: int,
+    log_y: bool,
+    quiet: bool,
     surrogate_model_class: t.Type[SurrogateModel],
 ):
 
@@ -57,6 +60,7 @@ async def run_example(
     res = await minimize(
         objective, space=SPACE, max_nevals=n_samples, rng=rng,
         surrogate_model_class=surrogate_model_class,
+        outputs=(Output(space=SPACE, log_file=None) if quiet else None),
     )
     y_min, y_min_std = res.model.predict(X_MIN)
 
@@ -94,6 +98,10 @@ def make_argument_parser() -> argparse.ArgumentParser:
              "gpr: Gaussian Process regression. "
              "knn: k-Nearest Neighbor. "
              "Default: %(default)s.")
+    parser.add_argument(
+        '--quiet', action='store_true',
+        dest='quiet',
+        help="Don't display human-readable output during minimization.")
 
     return parser
 
@@ -115,6 +123,7 @@ def main() -> None:
         n_samples=options.samples,
         log_y=options.log_y,
         surrogate_model_class=surrogate_model_class,
+        quiet=options.quiet,
     ))
     if options.interactive:
         plt.show()

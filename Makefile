@@ -19,5 +19,6 @@ install-dev:
 	$(PYTHON) -m pip install -e .[dev]
 
 examples-no-interactive:
-	time $(PYTHON) -m ggga.examples.goldstein_price --no-interactive >/dev/null
-	time $(PYTHON) -m ggga.examples.goldstein_price --model=knn --no-interactive >/dev/null
+	time $(PYTHON) -m ggga.examples.goldstein_price --quiet --no-interactive
+	time $(PYTHON) -m ggga.examples.goldstein_price --quiet --no-interactive \
+		--model=knn
