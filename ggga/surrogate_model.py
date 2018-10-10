@@ -15,7 +15,7 @@ class SurrogateModel(ToJsonish, abc.ABC):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
-        prior: 'SurrogateModel',
+        prior: t.Optional['SurrogateModel'],
     ) -> 'SurrogateModel':
         pass
 

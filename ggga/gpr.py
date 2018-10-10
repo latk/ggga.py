@@ -73,7 +73,7 @@ class SurrogateModelGPR(SurrogateModel):
         *,
         space: Space,
         rng: RandomState,
-        prior: 'SurrogateModel',
+        prior: t.Optional[SurrogateModel],
         noise_bounds: TBounds = (1e-5, 1e5),
         amplitude_bounds: TBounds = (1e-5, 1e5),
         length_scale_bounds: t.Union[TBounds, t.List[TBounds]] = (1e-3, 1e3),

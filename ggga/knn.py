@@ -42,7 +42,7 @@ class SurrogateModelKNN(SurrogateModel):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
-        prior: 'SurrogateModel',
+        prior: t.Optional[SurrogateModel],
         n_neighbors: int = 10,
         p: int = 2,
     ) -> 'SurrogateModelKNN':

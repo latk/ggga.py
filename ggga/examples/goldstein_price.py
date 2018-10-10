@@ -16,12 +16,12 @@ SPACE = Space(
     Real('x_1', '--x1', -2, 2),
     Real('x_2', '--x2', -2, 2),
 )
-X_MIN = (0.0, -1.0)
+X_MIN = [0.0, -1.0]
 
 
 async def run_example(*, rng: RandomState, n_samples: int, log_y: bool):
 
-    async def objective(xs, rng):
+    async def objective(xs, _rng):
         y = goldstein_price(xs[0], xs[1])
 
         if log_y:

@@ -29,7 +29,7 @@ class SurrogateModelHierarchical(SurrogateModel):
         cls, xs: np.ndarray, ys: np.ndarray, *,
         space: Space,
         rng: RandomState,
-        prior: SurrogateModel,
+        prior: t.Optional[SurrogateModel],
         base_model_class: t.Type[SurrogateModel] = None,
         detail_model_class: t.Type[SurrogateModel] = None,
     ) -> 'SurrogateModelHierarchical':
