@@ -2,21 +2,27 @@
 
 PYTHON ?= python
 
+PYTEST = $(PYTHON) -m pytest
+FLAKE8 = $(PYTHON) -m flake8
+MYPY   = $(PYTHON) -m mypy
+PYLINT = $(PYTHON) -m pylint
+PIP    = $(PYTHON) -m pip
+
 all:
 	# nothing
 
 qa: lint test examples-no-interactive
 
 test:
-	$(PYTHON) -m pytest ggga --doctest-modules
+	$(PYTEST) ggga --doctest-modules
 
 lint:
-	$(PYTHON) -m flake8 ggga
-	$(PYTHON) -m mypy ggga
-	$(PYTHON) -m pylint ggga $(PYLINT_FLAGS) || true
+	$(FLAKE8) ggga
+	$(MYPY) ggga
+	$(PYLINT) ggga $(PYLINT_FLAGS) || true
 
 install-dev:
-	$(PYTHON) -m pip install -e .[dev]
+	$(PIP) install -e .[dev]
 
 examples-no-interactive:
 	time $(PYTHON) -m ggga.examples.goldstein_price --quiet --no-interactive
