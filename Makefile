@@ -19,7 +19,7 @@ test:
 lint:
 	$(FLAKE8) ggga
 	$(MYPY) ggga
-	$(PYLINT) ggga $(PYLINT_FLAGS) || true
+	$(PYLINT) $(PYLINT_FLAGS) ggga || $(PYTHON) -m pylint_exit $$?
 
 install-dev:
 	$(PIP) install -e .[dev]
