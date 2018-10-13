@@ -24,12 +24,11 @@ TBounds = t.Tuple[float, float]
 @attr.attrs(repr=False, frozen=True, cmp=False)
 class SurrogateModelGPR(SurrogateModel):
     kernel: Kernel = attr.ib()
-    X_train: np.ndarray = attr.ib()
-    y_train: np.ndarray = attr.ib()
-    alpha: np.ndarray = attr.ib()
-    K_inv: np.ndarray = attr.ib()
-    ys_mean: float = attr.ib()
-    ys_min: float = attr.ib()
+    mat_x_train: np.ndarray = attr.ib()
+    vec_y_train: np.ndarray = attr.ib()
+    vec_alpha: np.ndarray = attr.ib()
+    mat_k_inv: np.ndarray = attr.ib()
+    y_expect: float = attr.ib()
     lml: float = attr.ib()
     space: Space = attr.ib()
 
@@ -40,8 +39,7 @@ class SurrogateModelGPR(SurrogateModel):
                 continue
             yield f"kernel_{key}", value
 
-        yield 'ys_mean', self.ys_mean
-        yield 'ys_min', self.ys_min
+        yield 'ys_expect', self.y_expect
         yield 'lml', self.lml
 
     def __repr__(self):
@@ -66,7 +64,7 @@ class SurrogateModelGPR(SurrogateModel):
         return [value for key, value in sorted(self._all_config_items())]
 
     @classmethod
-    def estimate(
+    def estimate(  # pylint: disable=arguments-differ,too-many-locals
         cls,
         mat_x: np.ndarray,
         vec_y: np.ndarray,
@@ -93,11 +91,10 @@ class SurrogateModelGPR(SurrogateModel):
             matern_nu=matern_nu,
         )
 
-        y_mean = np.mean(vec_y)
-        y_min = np.min(vec_y)
+        y_expect = np.min(vec_y)
 
         mat_x_train = np.array([space.into_transformed(x) for x in mat_x])
-        vec_y_train = vec_y - y_min
+        vec_y_train = vec_y - y_expect
         relax_alpha = 1e-10
         lml = fit_kernel(
             kernel, mat_x_train, vec_y_train,
@@ -106,19 +103,20 @@ class SurrogateModelGPR(SurrogateModel):
             relax_alpha=relax_alpha)
 
         return cls.from_kernel(
-            mat_x_train, vec_y_train, kernel,
+            mat_x_train, vec_y_train,
+            kernel=kernel,
             lml=lml, relax_alpha=relax_alpha,
-            ys_min=y_min, ys_mean=y_mean,
+            y_expect=y_expect,
             space=space,
         )
 
     @classmethod
-    def from_kernel(
-        cls, mat_x_train: np.ndarray, vec_y_train: np.ndarray, kernel: Kernel,
+    def from_kernel(  # pylint: disable=too-many-locals
+        cls, mat_x_train: np.ndarray, vec_y_train: np.ndarray, *,
+        kernel: Kernel,
         lml: t.Optional[float],
         relax_alpha: float,
-        ys_min: float,
-        ys_mean: float,
+        y_expect: float,
         space: Space,
     ) -> 'SurrogateModelGPR':
         if lml is None:
@@ -128,20 +126,20 @@ class SurrogateModelGPR(SurrogateModel):
             lml = -lml
         assert lml is not None  # for type checker
 
-        # precompute matrices for prediction
-        matrices_or_error = calculate_prediction_matrices(
-            mat_x_train, vec_y_train,
-            kernel=kernel,
-            eval_gradient=False,
-            relax_alpha=relax_alpha,
-        )
-        if isinstance(matrices_or_error, np.linalg.LinAlgError):
-            exc = matrices_or_error
+        try:
+            # precompute matrices for prediction
+            mat_l, vec_alpha, _mat_k_gradient = \
+                calculate_prediction_matrices(
+                    mat_x_train, vec_y_train,
+                    kernel=kernel,
+                    eval_gradient=False,
+                    relax_alpha=relax_alpha,
+                )
+        except np.linalg.LinAlgError as exc:
             exc.args = (
                 "The kernel did not return a positive definite matrix. "
                 "Please relax the alpha.", *exc.args)
             raise exc
-        _mat_k, mat_l, vec_alpha, _mat_k_gradient = matrices_or_error
 
         mat_l_inv = scipy.linalg.solve_triangular(
             mat_l.T, np.eye(mat_l.shape[0]))
@@ -149,12 +147,11 @@ class SurrogateModelGPR(SurrogateModel):
 
         return cls(
             kernel,
-            alpha=vec_alpha,
-            K_inv=mat_k_inv,
-            X_train=mat_x_train,
-            y_train=vec_y_train,
-            ys_mean=ys_mean,
-            ys_min=ys_min,
+            vec_alpha=vec_alpha,
+            mat_k_inv=mat_k_inv,
+            mat_x_train=mat_x_train,
+            vec_y_train=vec_y_train,
+            y_expect=y_expect,
             lml=lml,
             space=space)
 
@@ -165,18 +162,18 @@ class SurrogateModelGPR(SurrogateModel):
         mat_x_transformed = coerce_array(mat_x_transformed)
 
         kernel = self.kernel
-        vec_alpha = self.alpha
+        vec_alpha = self.vec_alpha
 
-        mat_k_trans = kernel(mat_x_transformed, self.X_train)
+        mat_k_trans = kernel(mat_x_transformed, self.mat_x_train)
         vec_y = mat_k_trans.dot(vec_alpha)
-        vec_y += self.ys_min  # undo normalization
+        vec_y += self.y_expect  # undo normalization
 
         vec_y_std = None
         if return_std:
             # Compute variance of predictive distribution
             vec_y_var = kernel.diag(mat_x_transformed)
             vec_y_var -= np.einsum(
-                "ki,kj,ij->k", mat_k_trans, mat_k_trans, self.K_inv)
+                "ki,kj,ij->k", mat_k_trans, mat_k_trans, self.mat_k_inv)
 
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
@@ -311,27 +308,28 @@ def log_marginal_likelihood(
     """
     kernel = kernel.clone_with_theta(theta)
 
-    matrices_or_error = calculate_prediction_matrices(
-        mat_x, vec_y,
-        kernel=kernel,
-        eval_gradient=eval_gradient,
-        relax_alpha=relax_alpha,
-    )
-    if isinstance(matrices_or_error, np.linalg.LinAlgError):
+    try:
+        mat_l, vec_alpha, mat_k_gradient = \
+            calculate_prediction_matrices(
+                mat_x, vec_y,
+                kernel=kernel,
+                eval_gradient=eval_gradient,
+                relax_alpha=relax_alpha,
+            )
+    except np.linalg.LinAlgError:
         vec_log_likelihood_gradient = None
         if eval_gradient:
             vec_log_likelihood_gradient = np.zeros_like(theta)
         return -np.inf, vec_log_likelihood_gradient
-    mat_k, mat_l, vec_alpha, mat_k_gradient = matrices_or_error
 
     # compute log-likelihood
     log_likelihood = -0.5 * vec_y.dot(vec_alpha)  # type: float
     log_likelihood -= np.log(np.diag(mat_l)).sum()
-    log_likelihood -= mat_k.shape[0] / 2 * np.log(2 * np.pi)
+    log_likelihood -= len(mat_x) / 2 * np.log(2 * np.pi)
 
     if eval_gradient:
         mat_tmp = np.outer(vec_alpha, vec_alpha)
-        mat_tmp -= cholesky_solve((mat_l, True), np.eye(mat_k.shape[0]))
+        mat_tmp -= cholesky_solve((mat_l, True), np.eye(len(mat_x)))
         # compute "0.5 * trace(tmp dot K_gradient)"
         # without constructing the full matrix
         # as only the diagonal is required
@@ -348,10 +346,34 @@ def calculate_prediction_matrices(
     kernel: Kernel,
     eval_gradient: bool,
     relax_alpha: float,
-) -> t.Union[
-    np.linalg.LinAlgError,
-    t.Tuple[np.ndarray, np.ndarray, np.ndarray, t.Optional[np.ndarray]],
-]:
+) -> t.Tuple[np.ndarray, np.ndarray, t.Optional[np.ndarray]]:
+    r"""
+    Arguments
+    ---------
+    mat_x : ndarray, shape (n, n_features)
+        The observed samples.
+    vec_y : ndarray, shape (n)
+        The observation results.
+    kernel : kernel function
+    eval_gradient : bool
+    relax_alpha : float
+        Additional term to make the covariance matrix positive definite.
+
+    Returns
+    -------
+    mat_l : ndarray, shape (n, n)
+        The lower cholesky decomposition of the covariance matrix.
+    vec_alpha : ndarray, shape (n)
+        The observation weights. Solution to "mat_k vec_alpha = vec_y".
+    mat_k_gradient : ndarray, shape (n, n), optional
+        Covariance gradient. Only computed if *eval_gradient* is set.
+
+    Raises
+    ------
+    np.linalg.LinAlgError
+        When the Cholesky decomposition of mat_k fails,
+        i.e. when the covariance matrix was not positive definite.
+    """
     mat_k_gradient = None
     if eval_gradient:
         mat_k, mat_k_gradient = kernel(mat_x, eval_gradient=True)
@@ -360,17 +382,15 @@ def calculate_prediction_matrices(
 
     mat_k[np.diag_indices_from(mat_k)] += relax_alpha
 
-    try:
-        # false positive: pylint: disable=unexpected-keyword-arg
-        mat_l = cholesky_decomposition(mat_k, lower=True)
-    except np.linalg.LinAlgError as exc:
-        return exc
+    # may raise LinAlgError!
+    # false positive: pylint: disable=unexpected-keyword-arg
+    mat_l = cholesky_decomposition(mat_k, lower=True)
 
     # solve the system "K alpha = y" for alpha,
     # based on the cholesky factorization L.
     vec_alpha = cholesky_solve((mat_l, True), vec_y)
 
-    return mat_k, mat_l, vec_alpha, mat_k_gradient
+    return mat_l, vec_alpha, mat_k_gradient
 
 
 def _get_kernel_or_default(
