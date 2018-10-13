@@ -281,7 +281,7 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     # EI plot
     sns.stripplot(
         x=[ind.gen for ind in all_evaluations],
-        y=[ind.ei for ind in all_evaluations],
+        y=[ind.expected_improvement for ind in all_evaluations],
         jitter=True,
         ax=ei_ax,
         palette=palette,

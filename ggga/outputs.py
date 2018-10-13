@@ -29,7 +29,11 @@ class IndividualsToTable:
 
     @staticmethod
     def individual_to_row(ind: Individual) -> t.Iterable:
-        yield from [ind.gen, ind.fitness, ind.prediction, ind.ei, ind.cost]
+        yield ind.gen
+        yield ind.fitness
+        yield ind.prediction
+        yield ind.expected_improvement
+        yield ind.cost
         yield from ind.sample
 
 

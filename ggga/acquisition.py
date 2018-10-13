@@ -105,31 +105,34 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
         replacements = list(self.subacquisition.acquire(
             replacements, model=model, relscale=relscale, rng=rng, fmin=fmin))
 
+        def key_expected_improvement(ind: Individual) -> float:
+            return ind.expected_improvement
+
         # indices will be popped from the queue worst to best
         replacements = sorted(
-            replacements, key=lambda ind: ind.ei, reverse=True)
-
-        def metropolis_select(rng, ratio):
-            return ratio > rng.rand()
+            replacements, key=key_expected_improvement, reverse=True)
 
         # search offspring from worst to best
-        for current in sorted(population, key=lambda ind: ind.ei):
+        for current in sorted(population, key=key_expected_improvement):
             replacement = None
             while replacements:
                 replacement = replacements.pop()
 
-                # Simple Metropolis sampling:
-                # Always accept replacement
-                # if replacement is better (ratio > 1).
-                # Otherwise, accept with probability equal to the ratio.
-                if metropolis_select(rng, replacement.ei / current.ei):
+                # Select replacement via Metropolis Sampling
+                repl_ei = replacement.expected_improvement
+                curr_ei = current.expected_improvement
+                if metropolis_select(rng, repl_ei, curr_ei):
                     break
 
                 # Hedge against greedy EI
                 # by Metropolis-sampling on the prediction.
                 # Always accept if replacement is twice as good.
+                # Note that the ratio is "2 curr / repl"
+                # Because for the prediction, smaller is better.
+                repl_prediction = replacement.prediction
+                curr_prediction = current.prediction
                 if self.hedge_via_prediction and metropolis_select(
-                    rng, current.prediction / replacement.prediction / 2,
+                    rng, 2 * curr_prediction, repl_prediction,
                 ):
                     break
 
@@ -198,7 +201,7 @@ class RandomWalkAcquisition(AcquisitionStrategy):
         return Individual(
             self.space.from_transformed(candidate_samples[i]),
             prediction=candidate_mean[i],
-            ei=candidate_ei[i])
+            expected_improvement=candidate_ei[i])
 
 
 @attr.s
@@ -246,7 +249,9 @@ class GradientAcquisition(AcquisitionStrategy):
             yield Individual(
                 self.space.from_transformed(sample),
                 prediction=vec_mean[0],
-                ei=expected_improvement(vec_mean[0], vec_std[0], fmin))
+                expected_improvement=expected_improvement(
+                    vec_mean[0], vec_std[0], fmin),
+            )
 
     def _optimize_sample_with_restart(
         self, parent_sample_transformed: Sample, *,
@@ -276,3 +281,27 @@ def expected_improvement(
     vec_z = -(vec_mean - fmin) / vec_std
     vec_ei = -(vec_mean - fmin) * norm.cdf(vec_z) + vec_std * norm.pdf(vec_z)
     return vec_ei
+
+
+def metropolis_select(
+    rng: RandomState, option: float, benchmark: float,
+) -> bool:
+    r"""Decide whether an option should be chosen:
+
+    - Always select the option if it improves over the benchmark.
+    - Select randomly with probability p=option/benchmark otherwise.
+
+    Corner case: if option = benchmark = 0, select with p=50%.
+
+    Better = larger.
+    """
+    assert option >= 0
+    assert benchmark >= 0
+    if option > benchmark:
+        return True
+    if benchmark == 0:
+        ratio = 0.5
+    else:
+        ratio = option/benchmark
+
+    return ratio > rng.rand()

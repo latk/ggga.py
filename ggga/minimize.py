@@ -177,7 +177,7 @@ class _MinimizationInstance:
 
         for ind in population:
             ind.prediction = 0
-            ind.ei = 0.0
+            ind.expected_improvement = 0.0
 
         await self._evaluate_all(population, gen=0, rng=rng)
         all_evaluations.extend(population)
