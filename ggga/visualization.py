@@ -9,6 +9,12 @@ from numpy.random import RandomState  # type: ignore
 from .minimize import Individual
 from . import SurrogateModel, Space
 
+ProgressCB = t.Callable[[str, t.Optional[str]], None]
+
+
+def _default_progress_cb(_param_1: str, _param_2: t.Optional[str]) -> None:
+    pass
+
 
 @attr.s(frozen=True)
 class DualDependenceStyle:
@@ -115,6 +121,7 @@ class PartialDependence:
         self, x_observed, y_observed, *,
         x_min=None,
         style: DualDependenceStyle = None,
+        progress_cb: ProgressCB = _default_progress_cb,
     ) -> t.Tuple[t.Any, t.Any]:
 
         n_dims = self.space.n_dims
@@ -134,8 +141,7 @@ class PartialDependence:
         for row in range(n_dims):
             # plot single-variable dependence on diagonal
             param_row = self.space.params[row]
-            print("[INFO] dependence plot 1D {} ({})".format(
-                row, param_row.name))
+            progress_cb(param_row.name, None)
 
             ax = axes[row, row]
             plot_single_variable_dependence(
@@ -153,8 +159,7 @@ class PartialDependence:
             for col in range(row):
                 # plot two-variable dependence on lower triangle
                 param_col = self.space.params[col]
-                print("[INFO] dependence plot {} x {} ({} x {})".format(
-                    row, col, param_row.name, param_col.name))
+                progress_cb(param_row.name, param_col.name)
 
                 ax = axes[row, col]
                 plot_dual_variable_dependence(
