@@ -1,9 +1,10 @@
+import abc
 import typing as t
+import warnings
+
 from numpy.random import RandomState  # type: ignore
 import numpy as np  # type: ignore
-import warnings
 import scipy.optimize  # type: ignore
-import abc
 
 TNumpy = t.TypeVar('TNumpy', np.ndarray, float)
 
@@ -21,8 +22,8 @@ def tabularize(
 
     columns = [[str(h)] for h in header]
     for row in data:
-        for col, f, d in zip(columns, formats, row):
-            col.append(f.format(d))
+        for col, fmt, data_item in zip(columns, formats, row):
+            col.append(fmt.format(data_item))
     assert all(len(columns[0]) == len(col) for col in columns), \
         [len(col) for col in columns]
     col_size = [max(len(d) for d in col) for col in columns]
@@ -71,3 +72,11 @@ class ToJsonish(abc.ABC):
     @abc.abstractmethod
     def to_jsonish(self) -> object:
         pass
+
+
+def coerce_array(
+    arrayish: t.Union[np.ndarray, t.Iterable],
+) -> np.ndarray:
+    if isinstance(arrayish, np.ndarray):
+        return arrayish
+    return np.array(arrayish)

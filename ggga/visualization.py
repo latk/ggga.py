@@ -82,6 +82,7 @@ class PartialDependence:
         for i, x in enumerate(xs_transformed):
             samples_transformed[:, dim] = x
             y, std = self.model.predict_transformed_a(samples_transformed)
+            assert std is not None
             ys[i] = np.mean(y)
             # IDEALLY: std(a + b) = sqrt(var(a) + var(b) - cov(a, b))
             # NOT: mean of stdev
@@ -102,7 +103,7 @@ class PartialDependence:
         for i, x_1 in enumerate(xs_transformed):
             for j, x_2 in enumerate(xs_transformed):
                 samples_transformed[:, (dim_1, dim_2)] = (x_1, x_2)
-                y = self.model.predict_transformed_a(
+                y, _std = self.model.predict_transformed_a(
                     samples_transformed, return_std=False)
                 ys[i, j] = np.mean(y)
 

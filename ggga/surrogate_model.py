@@ -1,7 +1,9 @@
 import abc
+import typing as t
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
-import typing as t
+
 from .space import Space
 from .util import ToJsonish
 
@@ -12,32 +14,40 @@ class SurrogateModel(ToJsonish, abc.ABC):
     @classmethod
     @abc.abstractmethod
     def estimate(
-        cls, xs: np.ndarray, ys: np.ndarray, *,
+        cls, mat_x: np.ndarray, vec_y: np.ndarray, *,
         space: Space,
         rng: RandomState,
         prior: t.Optional['SurrogateModel'],
+        **kwargs,
     ) -> 'SurrogateModel':
-        pass
+        raise NotImplementedError
 
-    def predict(self, sample: list, *, return_std: bool = True):
+    def predict(
+        self, vec_x: np.ndarray, *,
+        return_std: bool = True,
+    ) -> t.Tuple[float, t.Optional[float]]:
+        mean, std = self.predict_a([vec_x], return_std=return_std)
         if return_std:
-            mean, std = self.predict_a([sample], return_std=True)
+            assert std is not None
             return mean[0], std[0]
-        else:
-            mean = self.predict_a([sample], return_std=False)
-            return mean[0]
+        return mean[0], std
 
-    def predict_a(self, multiple_samples: list, return_std: bool=True):
+    def predict_a(
+        self, mat_x: np.ndarray, *,
+        return_std: bool = True,
+    ) -> t.Tuple[np.ndarray, t.Optional[np.ndarray]]:
         return self.predict_transformed_a(
             [self.space.into_transformed(sample)
-                for sample in multiple_samples],
+                for sample in mat_x],
             return_std=return_std,
         )
 
     @abc.abstractmethod
-    def predict_transformed_a(self, X: t.Iterable, *, return_std: bool=True):
-        pass
+    def predict_transformed_a(
+        self, mat_x_transformed: np.ndarray, *,
+        return_std: bool = True,
+    ) -> t.Tuple[np.ndarray, t.Optional[np.ndarray]]:
+        raise NotImplementedError
 
-    @abc.abstractmethod
     def length_scales(self) -> np.ndarray:
         return np.array([1.0] * self.space.n_dims)

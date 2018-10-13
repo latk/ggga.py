@@ -48,6 +48,7 @@ async def run_example(
     model = surrogate_model_class.estimate(
         xs, ys, space=SPACE, rng=rng, prior=None)
     y_min, y_min_std = model.predict(X_MIN)
+    assert y_min_std is not None
 
     print(f"Minimum after {n_samples} random samples: (None), "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")
@@ -63,6 +64,7 @@ async def run_example(
         outputs=(Output(space=SPACE, log_file=None) if quiet else None),
     )
     y_min, y_min_std = res.model.predict(X_MIN)
+    assert y_min_std is not None
 
     print(f"Minimum after {n_samples} GGGA-samples: {res.fmin:.2f}, "
           f"f({X_MIN}) = {y_min:.2f} +/- {y_min_std:.2f}")

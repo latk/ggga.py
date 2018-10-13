@@ -12,7 +12,7 @@ from numpy.random import RandomState  # type: ignore
 import attr
 
 from .space import Space
-from .util import fork_random_state, minimize_by_gradient
+from .util import fork_random_state, minimize_by_gradient, coerce_array
 from .surrogate_model import SurrogateModel
 
 # large parts of this code are “borrowed” from skopt (scikit-optimize),
@@ -79,7 +79,11 @@ class SurrogateModelGPR(SurrogateModel):
         length_scale_bounds: t.Union[TBounds, t.List[TBounds]] = (1e-3, 1e3),
         n_restarts_optimizer: int = 2,
         matern_nu: float = 5/2,
+        **kwargs,
     ) -> 'SurrogateModelGPR':
+        if kwargs:
+            raise TypeError(f"Unknown arguments: {sorted(kwargs)}")
+
         kernel = _get_kernel_or_default(
             n_dims=space.n_dims,
             prior=prior,
@@ -155,23 +159,22 @@ class SurrogateModelGPR(SurrogateModel):
             space=space)
 
     def predict_transformed_a(
-        self, mat_x: t.Iterable, *,
+        self, mat_x_transformed: np.ndarray, *,
         return_std: bool = True,
-    ):
-        if not isinstance(mat_x, (list, np.ndarray)):
-            mat_x = list(mat_x)
-        mat_x = np.array(mat_x)
+    ) -> t.Tuple[np.ndarray, t.Optional[np.ndarray]]:
+        mat_x_transformed = coerce_array(mat_x_transformed)
 
         kernel = self.kernel
         vec_alpha = self.alpha
 
-        mat_k_trans = kernel(mat_x, self.X_train)
+        mat_k_trans = kernel(mat_x_transformed, self.X_train)
         vec_y = mat_k_trans.dot(vec_alpha)
         vec_y += self.ys_min  # undo normalization
 
+        vec_y_std = None
         if return_std:
             # Compute variance of predictive distribution
-            vec_y_var = kernel.diag(mat_x)
+            vec_y_var = kernel.diag(mat_x_transformed)
             vec_y_var -= np.einsum(
                 "ki,kj,ij->k", mat_k_trans, mat_k_trans, self.K_inv)
 
@@ -183,9 +186,8 @@ class SurrogateModelGPR(SurrogateModel):
                               "Setting those variances to 0.")
                 vec_y_var[vec_y_var_is_negative] = 0.0
             vec_y_std = np.sqrt(vec_y_var)
-            return vec_y, vec_y_std
 
-        return vec_y
+        return vec_y, vec_y_std
 
     def __str__(self):
         return str(self.estimator.kernel_)

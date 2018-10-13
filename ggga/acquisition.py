@@ -218,6 +218,7 @@ class GradientAcquisition(AcquisitionStrategy):
 
         def objective(transformed: Sample) -> float:
             mean, std = model.predict_transformed_a(transformed)
+            assert std is not None
             return -expected_improvement(mean[0], std[0], fmin)
 
         def optimize_via_gradient(
@@ -240,6 +241,7 @@ class GradientAcquisition(AcquisitionStrategy):
             )
 
             vec_mean, vec_std = model.predict_transformed_a([sample])
+            assert vec_std is not None
 
             yield Individual(
                 self.space.from_transformed(sample),

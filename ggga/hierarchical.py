@@ -1,8 +1,11 @@
-from .surrogate_model import SurrogateModel
-from .space import Space
 import typing as t
+
 import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
+
+from .surrogate_model import SurrogateModel
+from .space import Space
+from .util import coerce_array
 
 
 class SurrogateModelHierarchical(SurrogateModel):
@@ -25,16 +28,20 @@ class SurrogateModelHierarchical(SurrogateModel):
         return data
 
     @classmethod
-    def estimate(
-        cls, xs: np.ndarray, ys: np.ndarray, *,
+    def estimate(  # pylint: disable=arguments-differ
+        cls, mat_x: np.ndarray, vec_y: np.ndarray, *,
         space: Space,
         rng: RandomState,
         prior: t.Optional[SurrogateModel],
         base_model_class: t.Type[SurrogateModel] = None,
         detail_model_class: t.Type[SurrogateModel] = None,
+        **kwargs,
     ) -> 'SurrogateModelHierarchical':
         assert base_model_class is not None
         assert detail_model_class is not None
+
+        if kwargs:
+            raise TypeError(f"Unknown arguments: {sorted(kwargs)}")
 
         base_prior = None
         detail_prior = None
@@ -44,11 +51,12 @@ class SurrogateModelHierarchical(SurrogateModel):
             detail_prior = prior.detail_model
 
         base_model = base_model_class.estimate(
-            xs, ys, space=space, rng=rng, prior=base_prior)
-        base_prediction = base_model.predict_a(xs, return_std=False)
+            mat_x, vec_y, space=space, rng=rng, prior=base_prior)
+        base_prediction = base_model.predict_a(mat_x, return_std=False)
 
         detail_model = detail_model_class.estimate(
-            xs, ys - base_prediction, space=space, rng=rng, prior=detail_prior)
+            mat_x, vec_y - base_prediction,
+            space=space, rng=rng, prior=detail_prior)
 
         return cls(
             base_model,
@@ -56,27 +64,30 @@ class SurrogateModelHierarchical(SurrogateModel):
             space=space)
 
     def predict_transformed_a(
-        self, X: t.Iterable, *,
-        return_std: bool=True,
-    ):
-        xs = np.array(list(X))
+        self, mat_x_transformed: np.array, *,
+        return_std: bool = True,
+    ) -> t.Tuple[np.ndarray, t.Optional[np.ndarray]]:
+        mat_x_transformed = coerce_array(mat_x_transformed)
 
         base_model = self.base_model
         detail_model = self.detail_model
 
-        if return_std:
-            base_ys, base_std = base_model.predict_transformed_a(
-                xs, return_std=True)
-            detail_ys, detail_std = detail_model.predict_transformed_a(
-                xs, return_std=True)
-            # TODO calculatate sum of stds properly
-            return base_ys + detail_ys, base_std + detail_std
+        base_ys, base_std = base_model.predict_transformed_a(
+            mat_x_transformed, return_std=return_std)
+        detail_ys, detail_std = detail_model.predict_transformed_a(
+            mat_x_transformed, return_std=return_std)
 
-        base_ys = base_model.predict_transformed_a(
-            xs, return_std=False)
-        detail_ys = detail_model.predict_transformed_a(
-            xs, return_std=False)
-        return base_ys + detail_ys
+        vec_y = base_ys + detail_ys
+        vec_std = None
+
+        if return_std:
+            assert base_std is not None
+            assert detail_std is not None
+            # sigma(X + Y) = sqrt(var(X) + var(Y) + cov(X, Y)
+            # Assume that covariance is zero...
+            vec_std = np.sqrt(base_std**2 + detail_std**2)
+
+        return vec_y, vec_std
 
     def length_scales(self) -> np.ndarray:
         return np.ndarray([

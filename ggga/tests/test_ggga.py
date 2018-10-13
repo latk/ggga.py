@@ -24,16 +24,18 @@ def describe_gpr():
             self.model: SurrogateModelGPR = model
 
         def predict(self, x: float) -> float:
-            return self.model.predict([x], return_std=False)
+            y, _ = self.model.predict([x], return_std=False)
+            return y
 
         def uncertainty(self, x: float) -> float:
-            y, std = self.model.predict([x])
+            _, std = self.model.predict([x])
+            assert std is not None
             return std
 
     def describe_differing_sample_density():
 
         @pytest.fixture(scope='module')
-        def model():
+        def model():  # pylint: disable=unused-variable
             xs = [0.1, 0.5, 0.5, 0.9]
             ys = [1.0, 1.8, 2.2, 3.0]
             model = SurrogateModelGPR.estimate(
@@ -68,7 +70,7 @@ def describe_gpr():
     def describe_unsampled_regions():
 
         @pytest.fixture(scope='module')
-        def model():
+        def model():  # pylint: disable=unused-variable
             xs = [0.3, 0.5, 0.7]
             ys = [1.0, 2.0, 1.5]
             model = SurrogateModelGPR.estimate(
