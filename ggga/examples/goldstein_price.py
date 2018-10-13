@@ -8,7 +8,7 @@ import numpy as np  # type: ignore
 from numpy.random import RandomState  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
 
-from .. import Space, Real, minimize
+from .. import Space, Real, Minimizer
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
 from ..benchmark_functions import goldstein_price
 from ..outputs import Output
@@ -58,9 +58,12 @@ async def run_example(
     fig.suptitle(f"Goldstein-Price ({n_samples} random samples)")
 
     # do a proper GGGA-run
-    res = await minimize(
-        objective, space=SPACE, max_nevals=n_samples, rng=rng,
+    minimizer = Minimizer(
+        max_nevals=n_samples,
         surrogate_model_class=surrogate_model_class,
+    )
+    res = await minimizer.minimize(
+        objective, space=SPACE, rng=rng,
         outputs=(Output(space=SPACE, log_file=None) if quiet else None),
     )
     y_min, y_min_std = res.model.predict(X_MIN)

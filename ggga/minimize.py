@@ -68,6 +68,19 @@ class OptimizationResult:
 
 @attr.s(frozen=True, cmp=False, auto_attribs=True)
 class Minimizer:
+    r"""
+    Attributes
+    ----------
+    popsize : int
+    max_nevals : int
+    relscale_initial : float
+    relscale_attenuation : float
+    surrogate_model_class : Type[SurrogateModel]
+    surrogate_model_args : dict
+    acquisition_strategy : AcquisitionStrategy, optional
+    time_source : TimeSource
+    """
+
     popsize: int = 10
     max_nevals: int = 100
     relscale_initial: float = 0.3
@@ -300,37 +313,6 @@ class _MinimizationInstance:
         return population
 
 
-async def minimize(  # pylint: disable=too-many-locals
-    objective: ObjectiveFunction,
-    *,
-    space: Space,
-    popsize: int = 10,
-    max_nevals: int = 100,
-    outputs: OutputEventHandler = None,
-    rng: RandomState,
-    relscale_initial: float = 0.3,
-    relscale_attenuation: float = 0.9,
-    surrogate_model_class: t.Type[SurrogateModel] = SurrogateModelGPR,
-    surrogate_model_args: dict = dict(),
-    acquisition_strategy: AcquisitionStrategy = None,
-    time_source: t.Callable[[], float] = time.time
-) -> OptimizationResult:
-
-    minimizer = Minimizer().with_setting(
-        popsize=popsize,
-        max_nevals=max_nevals,
-        relscale_initial=relscale_initial,
-        relscale_attenuation=relscale_attenuation,
-        surrogate_model_class=surrogate_model_class,
-        surrogate_model_args=surrogate_model_args,
-        acquisition_strategy=acquisition_strategy,
-        time_source=time_source,
-    )
-
-    return await minimizer.minimize(
-        objective, space=space, rng=rng, outputs=outputs)
-
-
 def select_next_population(
     *, parents: t.List[Individual], offspring: t.List[Individual],
 ) -> t.Tuple[t.List[Individual], t.List[Individual]]:
@@ -377,5 +359,4 @@ def replace_worst_n_individuals(
 __all__ = [
     Minimizer.__name__,
     OptimizationResult.__name__,
-    minimize.__name__,
 ]

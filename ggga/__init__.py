@@ -7,7 +7,8 @@ from .gpr import SurrogateModelGPR
 from .knn import SurrogateModelKNN
 from .hierarchical import SurrogateModelHierarchical
 from .util import tabularize
-from .minimize import minimize
+from .minimize import Minimizer
+from .outputs import Output, OutputEventHandler
 
 __all__ = [
     'RandomState',
@@ -15,5 +16,6 @@ __all__ = [
     'SurrogateModel',
     'SurrogateModelGPR', 'SurrogateModelKNN', 'SurrogateModelHierarchical',
     'tabularize',
-    'minimize',
+    'Minimizer',
+    'Output', 'OutputEventHandler',
 ]
