@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt  # type: ignore
 
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
-from ..benchmark_functions import goldstein_price, easom, himmelblau
+from ..benchmark_functions import goldstein_price, easom, himmelblau, rastrigin
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -79,6 +79,28 @@ EXAMPLES['himmelblau'] = Example(
         ([-3.779310, -3.283186], 0.0),
         ([3.584428, -1.848126], 0.0),
     ],
+)
+
+EXAMPLES['rastrigin2'] = Example(
+    function=rastrigin,
+    space=Space(
+        Real('x_1', '--x1', -5.12, 5.12),
+        Real('x_2', '--x2', -5.12, 5.12),
+    ),
+    minima=[([0.0]*2, 0.0)],
+)
+
+EXAMPLES['rastrigin6'] = Example(
+    function=rastrigin,
+    space=Space(
+        Real('x_1', '--x1', -5.12, 5.12),
+        Real('x_2', '--x2', -5.12, 5.12),
+        Real('x_3', '--x3', -5.12, 5.12),
+        Real('x_4', '--x4', -5.12, 5.12),
+        Real('x_5', '--x5', -5.12, 5.12),
+        Real('x_6', '--x6', -5.12, 5.12),
+    ),
+    minima=[([0.0]*6, 0.0)],
 )
 
 

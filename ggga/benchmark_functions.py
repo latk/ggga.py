@@ -65,3 +65,35 @@ def himmelblau(x_1: np.ndarray, x_2: np.ndarray) -> np.ndarray:
     """
 
     return (x_1**2 + x_2 - 11)**2 + (x_1 + x_2**2 - 7)**2
+
+
+def rastrigin(*xs: np.ndarray, amplitude: float = 10) -> np.ndarray:
+    r"""Rastrigin Function: N-dimensional with many local minima.
+
+    Bounds: -5.12 <= xi <= 5.12
+
+    Optimum: f(0, ..., 0) = 0
+
+    >>> rastrigin(0.0)  # minimum in 1D
+    0.0
+    >>> rastrigin(0.0, 0.0)  # minimum in 2D
+    0.0
+    >>> rastrigin(*[0.0]*10)  # minimum in 10D
+    0.0
+
+    >>> rastrigin()
+    Traceback (most recent call last):
+    TypeError: ...
+    """
+
+    if not xs:
+        raise TypeError("at least one dimension required")
+
+    assert amplitude > 0.0
+
+    n_dim = len(xs)
+
+    return amplitude * n_dim + sum(
+        x_i**2 - amplitude * np.cos(2 * np.pi * x_i)
+        for x_i in xs
+    )

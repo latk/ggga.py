@@ -31,3 +31,4 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --logy
 	time $(GGGA_EXAMPLE) easom --quiet --no-interactive
 	time $(GGGA_EXAMPLE) himmelblau --quiet --no-interactive
+	time $(GGGA_EXAMPLE) rastrigin2 --quiet --no-interactive
