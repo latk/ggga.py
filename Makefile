@@ -7,6 +7,7 @@ FLAKE8 = $(PYTHON) -m flake8
 MYPY   = $(PYTHON) -m mypy
 PYLINT = $(PYTHON) -m pylint
 PIP    = $(PYTHON) -m pip
+GGGA_EXAMPLE = $(PYTHON) -m ggga.examples
 
 all:
 	# nothing
@@ -25,6 +26,6 @@ install-dev:
 	$(PIP) install -e .[dev]
 
 examples-no-interactive:
-	time $(PYTHON) -m ggga.examples.goldstein_price --quiet --no-interactive
-	time $(PYTHON) -m ggga.examples.goldstein_price --quiet --no-interactive \
-		--model=knn
+	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive
+	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --model=knn
+	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --logy
