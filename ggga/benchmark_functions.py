@@ -45,3 +45,23 @@ def easom(
     return amplitude * (1 - np.cos(x_1) * np.cos(x_2) * np.exp(
         -((x_1 - np.pi)**2 + (x_2 - np.pi)**2)
     ))
+
+
+def himmelblau(x_1: np.ndarray, x_2: np.ndarray) -> np.ndarray:
+    r"""Himmelblau's function: Asymetric polynomial with 4 minima.
+
+    Bounds: -5 <= x_1, x_2 <= 5
+
+    Minima:
+
+    >>> round(himmelblau(3.0, 2.0), 5)
+    0.0
+    >>> round(himmelblau(-2.805118, 3.131312), 5)
+    0.0
+    >>> round(himmelblau(-3.779310, -3.283186), 5)
+    0.0
+    >>> round(himmelblau(3.584428, -1.848126), 5)
+    0.0
+    """
+
+    return (x_1**2 + x_2 - 11)**2 + (x_1 + x_2**2 - 7)**2

@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt  # type: ignore
 
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
-from ..benchmark_functions import goldstein_price, easom
+from ..benchmark_functions import goldstein_price, easom, himmelblau
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -64,6 +64,20 @@ EXAMPLES['easom'] = Example(
     ),
     minima=[
         ([np.pi, np.pi], 0.0)
+    ],
+)
+
+EXAMPLES['himmelblau'] = Example(
+    function=himmelblau,
+    space=Space(
+        Real('x_1', '--x1', -5, 5),
+        Real('x_2', '--x2', -5, 5),
+    ),
+    minima=[
+        ([3.0, 2.0], 0.0),
+        ([-2.805118, 3.131312], 0.0),
+        ([-3.779310, -3.283186], 0.0),
+        ([3.584428, -1.848126], 0.0),
     ],
 )
 
