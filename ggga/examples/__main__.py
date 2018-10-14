@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt  # type: ignore
 
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
-from ..benchmark_functions import goldstein_price
+from ..benchmark_functions import goldstein_price, easom
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -47,7 +47,23 @@ EXAMPLES['goldstein-price'] = Example(
         Real('x_2', '--x2', -2, 2),
     ),
     minima=[
-        ([0.0, -1.0], 0),
+        ([0.0, -1.0], 0.0),
+    ],
+)
+
+
+# Easom is very difficult for the GPR
+# because the initial random samples will likely miss the minimum.
+# Given that all observations are flat, the GPR will choose a long scale
+# which assigns a low EI to unexplored regions.
+EXAMPLES['easom'] = Example(
+    function=lambda x_1, x_2: easom(x_1, x_2, amplitude=100.0),
+    space=Space(
+        Real('x_1', '--x1', -25, 25),
+        Real('x_2', '--x2', -25, 25),
+    ),
+    minima=[
+        ([np.pi, np.pi], 0.0)
     ],
 )
 

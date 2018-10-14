@@ -15,7 +15,7 @@ all:
 qa: lint test examples-no-interactive
 
 test:
-	$(PYTEST) ggga --doctest-modules
+	$(PYTEST) ggga --doctest-modules $(PYTEST_ARGS)
 
 lint:
 	$(FLAKE8) ggga
@@ -29,3 +29,4 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive
 	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --model=knn
 	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --logy
+	time $(GGGA_EXAMPLE) easom --quiet --no-interactive
