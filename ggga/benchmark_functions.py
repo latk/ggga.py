@@ -119,3 +119,24 @@ def rosenbrock(*xs: np.ndarray) -> np.ndarray:
         100 * (xs[i + 1] - xs[i]**2)**2 + (1 - xs[i])**2
         for i in range(len(xs) - 1)
     )
+
+
+def sphere(*xs: np.ndarray) -> np.ndarray:
+    r"""Sphere function: N-dimensional, symmetric.
+
+    Bounds: unbounded, but -2 <= xi <= 2 is sensible.
+
+    Optimum: f(0, ..., 0) = 0
+
+    >>> sphere(*[0.0]*1)
+    0.0
+    >>> sphere(*[0.0]*2)
+    0.0
+    >>> sphere(*[0.0]*6)
+    0.0
+    """
+
+    if not xs:
+        raise TypeError("at least one dimension required")
+
+    return sum(x**2 for x in xs)

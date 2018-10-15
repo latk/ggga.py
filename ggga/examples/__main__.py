@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt  # type: ignore
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
 from ..benchmark_functions import (
-    goldstein_price, easom, himmelblau, rastrigin, rosenbrock)
+    goldstein_price, easom, himmelblau, rastrigin, rosenbrock, sphere)
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -124,6 +124,28 @@ EXAMPLES['rosenbrock6'] = Example(
         Real('x_6', '--x6', -5.12, 5.12),
     ),
     minima=[([1.0]*6, 0.0)],
+)
+
+EXAMPLES['sphere2'] = Example(
+    function=sphere,
+    space=Space(
+        Real('x_1', '--x1', -2.0, 2.0),
+        Real('x_2', '--x2', -2.0, 2.0),
+    ),
+    minima=[([0.0]*2, 0.0)],
+)
+
+EXAMPLES['sphere6'] = Example(
+    function=sphere,
+    space=Space(
+        Real('x_1', '--x1', -2.0, 2.0),
+        Real('x_2', '--x2', -2.0, 2.0),
+        Real('x_3', '--x3', -2.0, 2.0),
+        Real('x_4', '--x4', -2.0, 2.0),
+        Real('x_5', '--x5', -2.0, 2.0),
+        Real('x_6', '--x6', -2.0, 2.0),
+    ),
+    minima=[([0.0]*6, 0.0)],
 )
 
 
