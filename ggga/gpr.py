@@ -91,6 +91,11 @@ class SurrogateModelGPR(SurrogateModel):
             matern_nu=matern_nu,
         )
 
+        # Usually the GPR expectation is set to the mean of the observations.
+        # Here, we set it close to the minimum
+        # because we are more interested in finding a better minimum
+        # than finding an overall well-fitting model.
+        # TODO: y_expect = np.min(vec_y) - 1e-2
         y_expect = np.min(vec_y)
 
         mat_x_train = np.array([space.into_transformed(x) for x in mat_x])

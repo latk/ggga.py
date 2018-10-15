@@ -118,23 +118,37 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
             while replacements:
                 replacement = replacements.pop()
 
-                # Select replacement via Metropolis Sampling
+                # Select replacement via Metropolis Sampling on EI
                 repl_ei = replacement.expected_improvement
                 curr_ei = current.expected_improvement
                 if metropolis_select(rng, repl_ei, curr_ei):
                     break
 
-                # Hedge against greedy EI
-                # by Metropolis-sampling on the prediction.
-                # Always accept if replacement is twice as good.
-                # Note that the ratio is "2 curr / repl"
-                # Because for the prediction, smaller is better.
-                repl_prediction = replacement.prediction
-                curr_prediction = current.prediction
-                if self.hedge_via_prediction and metropolis_select(
-                    rng, 2 * curr_prediction, repl_prediction,
-                ):
-                    break
+                # So EI didn't introduce a replacement.
+                # But what if the replacement is much better?
+                # This should not matter, as the prediction value
+                # is already considered by the EI metric.
+                # In practice, being willing to do a bit more exploration
+                # can be helpful to get a good model.
+                #
+                # A previous version tried to metropolis-select directly
+                # on the prediction value, but the prediction is
+                # interval-scaled, NOT ratio-scaled!
+                #
+                # We can introduce a pseudo-interval-scale by selecting
+                # on the difference to some zero point. Here we can choose
+                # ratio = exp(curr_prediction - repl_prediction).
+                # - if the replacement is better (lower) the metropolis ratio
+                #   will be > 1 and the replacement will be selected.
+                # - if the replacement is worse (higher)
+                #   the replacement will be selected with a smallish chance.
+                # Note that for predictions, smaller is better.
+                if self.hedge_via_prediction:
+                    curr_prediction = current.prediction
+                    repl_prediction = replacement.prediction
+                    ratio = np.exp(curr_prediction - repl_prediction)
+                    if metropolis_select(rng, ratio, 1.0):
+                        break
 
                 replacement = None  # reset if failed
 
@@ -293,7 +307,7 @@ def metropolis_select(
 
     Corner case: if option = benchmark = 0, select with p=50%.
 
-    Better = larger.
+    Better = larger. Only applicable to ratio-scaled variables!
     """
     assert option >= 0
     assert benchmark >= 0
