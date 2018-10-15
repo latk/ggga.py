@@ -32,3 +32,4 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) easom --quiet --no-interactive
 	time $(GGGA_EXAMPLE) himmelblau --quiet --no-interactive
 	time $(GGGA_EXAMPLE) rastrigin2 --quiet --no-interactive
+	time $(GGGA_EXAMPLE) rosenbrock2 --quiet --no-interactive --logy --samples 80

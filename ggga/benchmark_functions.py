@@ -97,3 +97,25 @@ def rastrigin(*xs: np.ndarray, amplitude: float = 10) -> np.ndarray:
         x_i**2 - amplitude * np.cos(2 * np.pi * x_i)
         for x_i in xs
     )
+
+
+def rosenbrock(*xs: np.ndarray) -> np.ndarray:
+    r"""Rosenbrock function: N-dimensional and asymetric.
+
+    Bounds: unbounded, but interval [-2.5, 2.5] sensible
+
+    Optimum: f(1, ..., 1) = 0
+
+    >>> rosenbrock(1.0, 1.0)
+    0.0
+    >>> rosenbrock(*[1.0]*6)
+    0.0
+    """
+
+    if len(xs) < 2:
+        raise TypeError("at least two dimensions required")
+
+    return sum(
+        100 * (xs[i + 1] - xs[i]**2)**2 + (1 - xs[i])**2
+        for i in range(len(xs) - 1)
+    )

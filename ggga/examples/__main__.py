@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt  # type: ignore
 
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
-from ..benchmark_functions import goldstein_price, easom, himmelblau, rastrigin
+from ..benchmark_functions import (
+    goldstein_price, easom, himmelblau, rastrigin, rosenbrock)
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -101,6 +102,28 @@ EXAMPLES['rastrigin6'] = Example(
         Real('x_6', '--x6', -5.12, 5.12),
     ),
     minima=[([0.0]*6, 0.0)],
+)
+
+EXAMPLES['rosenbrock2'] = Example(
+    function=rosenbrock,
+    space=Space(
+        Real('x_1', '--x1', -5.12, 5.12),
+        Real('x_2', '--x2', -5.12, 5.12),
+    ),
+    minima=[([1.0]*2, 0.0)],
+)
+
+EXAMPLES['rosenbrock6'] = Example(
+    function=rosenbrock,
+    space=Space(
+        Real('x_1', '--x1', -5.12, 5.12),
+        Real('x_2', '--x2', -5.12, 5.12),
+        Real('x_3', '--x3', -5.12, 5.12),
+        Real('x_4', '--x4', -5.12, 5.12),
+        Real('x_5', '--x5', -5.12, 5.12),
+        Real('x_6', '--x6', -5.12, 5.12),
+    ),
+    minima=[([1.0]*6, 0.0)],
 )
 
 
@@ -213,6 +236,9 @@ def compare_model_with_minima_io(
     n_samples: int,
     sample_type: str,
 ) -> None:
+
+    if log_y:
+        fmin = None if fmin is None else np.exp(fmin)
 
     fmin_str = ("(None)" if fmin is None else f"{fmin:.2f}")
     print(f"Minima after {n_samples} {sample_type} samples: {fmin_str}")
