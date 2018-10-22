@@ -233,17 +233,26 @@ class SurrogateModelGPR(SurrogateModel):
 
         vec_y_std = None
         if return_std:
-            # Compute variance of predictive distribution
-            vec_y_var = kernel.diag(mat_x_transformed)
+            # Compute variance of predictive distribution.
+            # The "min_noise" term is added to avoid negative variances
+            # (could occur due to numeric issues).
+            min_noise = 1e-5
+            vec_y_var = kernel.diag(mat_x_transformed) + min_noise
             vec_y_var -= np.einsum(
                 "ki,kj,ij->k", mat_k_trans, mat_k_trans, self.mat_k_inv)
 
             # Check if any of the variances is negative because of
             # numerical issues. If yes: set the variance to 0.
+            # But only warn on largeish differences.
             vec_y_var_is_negative = vec_y_var < 0
-            if np.any(vec_y_var_is_negative):
+            if np.any(vec_y_var[vec_y_var_is_negative] < -np.sqrt(min_noise)):
+                abbrev_variances = ', '.join(
+                    format(var, '.2e')
+                    for var in vec_y_var[vec_y_var_is_negative])
                 warnings.warn("Predicted variances smaller than 0. "
-                              "Setting those variances to 0.")
+                              "Setting those variances to 0. "
+                              f"({abbrev_variances})")
+            if np.any(vec_y_var_is_negative):
                 vec_y_var[vec_y_var_is_negative] = 0.0
             vec_y_std = np.sqrt(vec_y_var) * self.y_amplitude
 

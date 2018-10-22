@@ -43,13 +43,20 @@ def minimize_by_gradient(
     bounds: list = None,
     approx_grad: bool = False,
 ) -> t.Tuple[np.ndarray, float]:
-    result, fmin, convergence_dict = scipy.optimize.fmin_l_bfgs_b(
+    result, fmin, info = scipy.optimize.fmin_l_bfgs_b(
         obj_func, start, bounds=bounds, approx_grad=approx_grad)
 
-    if convergence_dict['warnflag'] != 0:
+    line_search_task = b'ABNORMAL_TERMINATION_IN_LNSRCH'
+    if info['warnflag'] == 2 and info['task'] == line_search_task:
+        # This indicates an inconsistent gradient. This is very unfortunate,
+        # but it is not clear why the gradient should be wrong.
+        # For background see https://stackoverflow.com/a/39155976/1521179
+        pass
+
+    elif info['warnflag'] != 0:
         warnings.warn(
             f"fmin_l_bfgs_b failed with state:\n"
-            f"        {convergence_dict}")
+            f"        {info}")
 
     # clip values to bounds, if any
     if bounds is not None:
