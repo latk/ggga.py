@@ -78,25 +78,32 @@ class PartialDependence:
 
     def along_one_dimension(
         self, dim: int,
-    ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         samples_transformed = np.array(self._samples_transformed)
         xs_transformed = np.linspace(0.0, 1.0, self._resolution)
 
-        ys = np.zeros(self._resolution)
-        stds = np.zeros(self._resolution)
+        ys_mean = np.zeros(self._resolution)
+        ys_min = np.zeros(self._resolution)
+        ys_mean_std = np.zeros(self._resolution)
+        ys_min_std = np.zeros(self._resolution)
 
         for i, x in enumerate(xs_transformed):
             samples_transformed[:, dim] = x
             y, std = self.model.predict_transformed_a(samples_transformed)
             assert std is not None
-            ys[i] = np.mean(y)
+
+            ys_mean[i] = np.mean(y)
             # IDEALLY: std(a + b) = sqrt(var(a) + var(b) - cov(a, b))
             # NOT: mean of stdev
             # INSTEAD: mean of variance
-            stds[i] = np.sqrt(np.mean(std**2))
+            ys_mean_std[i] = np.sqrt(np.mean(std**2))
+
+            y_min_loc = np.argmin(y)
+            ys_min[i] = y[y_min_loc]
+            ys_min_std[i] = std[y_min_loc]
 
         xs = self.space.params[dim].from_transformed_a(xs_transformed)
-        return xs, ys, stds
+        return xs, ys_mean, ys_min, ys_mean_std, ys_min_std
 
     def along_two_dimensions(
         self, dim_1: int, dim_2: int,
@@ -195,12 +202,23 @@ def plot_single_variable_dependence(
     minline_args=dict(linestyle='--', color='r', lw=1),
 ) -> None:
 
-    xs, ys, std = partial_dependence.along_one_dimension(dim)
+    xs, ys_mean, ys_min, ys_mean_std, ys_min_std = \
+        partial_dependence.along_one_dimension(dim)
 
     ax.scatter([x[dim] for x in x_observed], y_observed, **scatter_args)
 
-    ax.fill_between(xs, ys - 2*std, ys + 2*std, color='b', alpha=0.15)
-    ax.plot(xs, ys, c='b')
+    ax.fill_between(
+        xs,
+        ys_mean - 2*ys_mean_std,
+        ys_mean + 2*ys_mean_std,
+        color='b', alpha=0.15)
+    ax.fill_between(
+        xs,
+        ys_min - 2*ys_min_std,
+        ys_min + 2*ys_min_std,
+        color='r', alpha=0.15)
+    ax.plot(xs, ys_mean, c='b')
+    ax.plot(xs, ys_min, c='r')
 
     if x_observed_min is not None:
         ax.axvline(x_observed_min[dim], **minline_args)
