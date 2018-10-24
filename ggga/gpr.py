@@ -1,9 +1,40 @@
+r"""SurrogateModel based on Gaussian Process Regression (GPR)
+
+The code is based on GPs as described in Rasmussen & Williams 2006,
+in particular equations 2.23 and 2.24, and the algorithm 2.1::
+
+    def predict(mat_x_train, vec_y_train, kernel, noise_level, mat_x):
+        # note on notation: x = A \ b <=> A x = b
+        mat_k = kernel(mat_x_train, mat_x_train)
+        mat_k_trans = kernel(mat_x_train, mat_x)
+
+        # Line 2:
+        mat_l = cholesky(mat_k + noise_level mat_diag)
+        # Line 3:
+        vec_alpha = mat_l.T \ (mat_l \ vec_y)
+        # Line 4:
+        vec_y = mat_k_trans.T vec_alpha
+        # Line 5:
+        mat_v[:,k] = mat_l \ mat_k_trans[:,k]
+        # Line 6:
+        vec_y_var[k] = kernel(mat_x, mat_x)[k,k] - sum(mat_v[i,k] mat_v[i,k])
+        # Line 7:
+        lml = log p(vec_y_train | mat_x_train)
+            = -½ vec_y_train.T vec_alpha - sum(log mat_l[i,i]) - n/2 log 2 pi
+        # Line 8:
+        return vec_y, vec_y_var, lml
+
+Large parts of this code are based on skopt.learning.GaussianProcessRegressor
+from skopt (scikit-optimize)
+at https://github.com/scikit-optimize/scikit-optimize
+
+"""
+
 import warnings
 import typing as t
 
 from sklearn.gaussian_process.kernels import (  # type: ignore
-    Kernel, ConstantKernel, Matern, WhiteKernel, Sum, Product)
-from sklearn.base import clone  # type: ignore
+        Kernel, ConstantKernel, Matern, Product)
 from scipy.linalg import (  # type: ignore
     cholesky as cholesky_decomposition, cho_solve as cholesky_solve)
 import scipy.linalg  # type: ignore
@@ -15,20 +46,20 @@ from .space import Space
 from .util import fork_random_state, minimize_by_gradient, coerce_array
 from .surrogate_model import SurrogateModel
 
-# large parts of this code are “borrowed” from skopt (scikit-optimize),
-# see https://github.com/scikit-optimize/scikit-optimize
-
 TBounds = t.Tuple[float, float]
 
 
 @attr.attrs(repr=False, frozen=True, cmp=False)
 class SurrogateModelGPR(SurrogateModel):
     kernel: Kernel = attr.ib()
+    noise_level: float = attr.ib()
+    noise_bounds: TBounds = attr.ib()
     mat_x_train: np.ndarray = attr.ib()
     vec_y_train: np.ndarray = attr.ib()
     vec_alpha: np.ndarray = attr.ib()
     mat_k_inv: np.ndarray = attr.ib()
     y_expect: float = attr.ib()
+    y_amplitude: float = attr.ib()
     lml: float = attr.ib()
     space: Space = attr.ib()
 
@@ -39,6 +70,7 @@ class SurrogateModelGPR(SurrogateModel):
                 continue
             yield f"kernel_{key}", value
 
+        yield 'noise_level', self.noise_level
         yield 'ys_expect', self.y_expect
         yield 'lml', self.lml
 
@@ -63,6 +95,58 @@ class SurrogateModelGPR(SurrogateModel):
     def as_csv_row(self) -> list:
         return [value for key, value in sorted(self._all_config_items())]
 
+    @staticmethod
+    def _normalized_from_ys(
+        vec_y: np.ndarray,
+    ) -> t.Tuple[np.ndarray, float, float]:
+        r""" Transform ys to small positive numbers.
+
+        Usually the GPR expectation is set to the mean of the observations.
+        Here, we set it close to the minimum
+        because we are more interested in finding a better minimum
+        than finding an overall well-fitting model.
+
+        Returns
+        -------
+        * vec_y (normalized)
+        * y_amplitude
+        * y_expect
+
+        Example: inverse:
+
+        >>> ys, y_amplitude, y_expect = SurrogateModelGPR._normalized_from_ys(
+        ...     [1, 2, 3, 4])
+        >>> SurrogateModelGPR._ys_from_normalized(
+        ...     ys, y_amplitude=y_amplitude, y_expect=y_expect)
+        array([1., 2., 3., 4.])
+
+        Example: inverse with negative numbers:
+        >>> ys, y_amplitude, y_expect = SurrogateModelGPR._normalized_from_ys(
+        ...     [-5, 3, 18, -2])
+        >>> SurrogateModelGPR._ys_from_normalized(
+        ...     ys, y_amplitude=y_amplitude, y_expect=y_expect)
+        array([-5.,  3., 18., -2.])
+        """
+        vec_y_train = np.array(vec_y, dtype=float)
+        y_expect = np.min(vec_y)
+        vec_y_train -= y_expect
+        y_amplitude = np.mean(vec_y_train)
+        if y_amplitude == 0:
+            y_amplitude = 1.0
+        vec_y_train /= y_amplitude
+        vec_y_train += 0.05
+        return vec_y_train, y_amplitude, y_expect
+
+    @staticmethod
+    def _ys_from_normalized(
+        vec_y_normalized: np.ndarray, *, y_amplitude: float, y_expect: float,
+    ) -> np.ndarray:
+        vec_y = np.array(vec_y_normalized, dtype=float)
+        vec_y -= 0.05
+        vec_y *= y_amplitude
+        vec_y += y_expect
+        return vec_y
+
     @classmethod
     def estimate(  # pylint: disable=arguments-differ,too-many-locals
         cls,
@@ -73,92 +157,65 @@ class SurrogateModelGPR(SurrogateModel):
         rng: RandomState,
         prior: t.Optional[SurrogateModel],
         noise_bounds: TBounds = (1e-5, 1e5),
-        amplitude_bounds: TBounds = (1e-5, 1e5),
+        amplitude_bounds: TBounds = None,
         length_scale_bounds: t.Union[TBounds, t.List[TBounds]] = (1e-3, 1e3),
         n_restarts_optimizer: int = 2,
         matern_nu: float = 5/2,
         **kwargs,
     ) -> 'SurrogateModelGPR':
+        n_observations, n_features = np.shape(mat_x)
+        assert np.shape(vec_y) == (n_observations,), repr(np.shape(vec_y))
+        assert len(space.params) == n_features, repr(space.params)
+        assert prior is None or isinstance(prior, SurrogateModelGPR)
+
         if kwargs:
             raise TypeError(f"Unknown arguments: {sorted(kwargs)}")
 
-        kernel = _get_kernel_or_default(
+        vec_y_train, y_amplitude, y_expect = cls._normalized_from_ys(vec_y)
+        mat_x_train = np.array([space.into_transformed(x) for x in mat_x])
+
+        if amplitude_bounds is None:
+            amplitude_hi = np.sum(vec_y_train**2)
+            amplitude_lo = np.percentile(vec_y_train, 10)**2 * len(vec_y_train)
+            assert amplitude_lo >= 0
+            amplitude_bounds = (max(amplitude_lo, 2e-5) / 2, amplitude_hi * 2)
+
+        amplitude_start = np.exp(np.mean(np.log(
+            [amplitude_lo, amplitude_hi],
+        )))
+
+        kernel, noise_level, noise_bounds = _get_kernel_or_default(
             n_dims=space.n_dims,
             prior=prior,
+            amplitude_start=amplitude_start,
             amplitude_bounds=amplitude_bounds,
             noise_bounds=noise_bounds,
             length_scale_bounds=length_scale_bounds,
             matern_nu=matern_nu,
         )
 
-        # Usually the GPR expectation is set to the mean of the observations.
-        # Here, we set it close to the minimum
-        # because we are more interested in finding a better minimum
-        # than finding an overall well-fitting model.
-        # TODO: y_expect = np.min(vec_y) - 1e-2
-        y_expect = np.min(vec_y)
-
-        mat_x_train = np.array([space.into_transformed(x) for x in mat_x])
-        vec_y_train = vec_y - y_expect
-        relax_alpha = 1e-10
-        lml = fit_kernel(
-            kernel, mat_x_train, vec_y_train,
-            rng=fork_random_state(rng),
-            n_restarts_optimizer=n_restarts_optimizer,
-            relax_alpha=relax_alpha)
-
-        return cls.from_kernel(
-            mat_x_train, vec_y_train,
-            kernel=kernel,
-            lml=lml, relax_alpha=relax_alpha,
-            y_expect=y_expect,
-            space=space,
-        )
-
-    @classmethod
-    def from_kernel(  # pylint: disable=too-many-locals
-        cls, mat_x_train: np.ndarray, vec_y_train: np.ndarray, *,
-        kernel: Kernel,
-        lml: t.Optional[float],
-        relax_alpha: float,
-        y_expect: float,
-        space: Space,
-    ) -> 'SurrogateModelGPR':
-        if lml is None:
-            lml, _ = log_marginal_likelihood(
-                kernel.theta, eval_gradient=False, kernel=kernel,
-                mat_x=mat_x_train, vec_y=vec_y_train, relax_alpha=relax_alpha)
-            lml = -lml
-        assert lml is not None  # for type checker
-
-        try:
-            # precompute matrices for prediction
-            mat_l, vec_alpha, _mat_k_gradient = \
-                calculate_prediction_matrices(
-                    mat_x_train, vec_y_train,
-                    kernel=kernel,
-                    eval_gradient=False,
-                    relax_alpha=relax_alpha,
-                )
-        except np.linalg.LinAlgError as exc:
-            exc.args = (
-                "The kernel did not return a positive definite matrix. "
-                "Please relax the alpha.", *exc.args)
-            raise exc
-
-        mat_l_inv = scipy.linalg.solve_triangular(
-            mat_l.T, np.eye(mat_l.shape[0]))
-        mat_k_inv = mat_l_inv.dot(mat_l_inv.T)
+        noise_level, noise_bounds, vec_alpha, mat_k_inv, lml = \
+            fit_kernel(
+                kernel, mat_x_train, vec_y_train,
+                rng=fork_random_state(rng),
+                n_restarts_optimizer=n_restarts_optimizer,
+                noise_level=noise_level,
+                noise_bounds=noise_bounds,
+            )
 
         return cls(
-            kernel,
-            vec_alpha=vec_alpha,
-            mat_k_inv=mat_k_inv,
+            kernel=kernel,
+            noise_level=noise_level,
+            noise_bounds=noise_bounds,
             mat_x_train=mat_x_train,
             vec_y_train=vec_y_train,
+            vec_alpha=vec_alpha,
+            mat_k_inv=mat_k_inv,
             y_expect=y_expect,
+            y_amplitude=y_amplitude,
             lml=lml,
-            space=space)
+            space=space,
+        )
 
     def predict_transformed_a(
         self, mat_x_transformed: np.ndarray, *,
@@ -171,7 +228,8 @@ class SurrogateModelGPR(SurrogateModel):
 
         mat_k_trans = kernel(mat_x_transformed, self.mat_x_train)
         vec_y = mat_k_trans.dot(vec_alpha)
-        vec_y += self.y_expect  # undo normalization
+        vec_y = self._ys_from_normalized(
+            vec_y, y_amplitude=self.y_amplitude, y_expect=self.y_expect)
 
         vec_y_std = None
         if return_std:
@@ -187,7 +245,7 @@ class SurrogateModelGPR(SurrogateModel):
                 warnings.warn("Predicted variances smaller than 0. "
                               "Setting those variances to 0.")
                 vec_y_var[vec_y_var_is_negative] = 0.0
-            vec_y_std = np.sqrt(vec_y_var)
+            vec_y_std = np.sqrt(vec_y_var) * self.y_amplitude
 
         return vec_y, vec_y_std
 
@@ -220,14 +278,14 @@ class ClosedInterval:
 
 
 def fit_kernel(
-    kernel: Kernel,
-    mat_x: np.ndarray,
-    vec_y: np.ndarray, *,
+    kernel: Kernel, mat_x_train, vec_y_train, *,
     rng: RandomState,
     n_restarts_optimizer: int,
-    relax_alpha: float = 0.0,
-) -> float:
-    """Assign kernel parameters with maximal log-marginal-likelihood.
+    noise_level: float,
+    noise_bounds: TBounds,
+) -> t.Tuple[float, TBounds, np.ndarray, np.ndarray, float]:
+    # pylint: disable=too-many-locals,too-many-statements
+    r"""Assign kernel parameters with maximal log-marginal-likelihood.
 
     Parameters
     ----------
@@ -238,178 +296,133 @@ def fit_kernel(
         All parameter bounds must be finite.
         The kernel is modified in-place.
     mat_x, vec_y
-        Supporting input observations, already transformed and normalized-
+        Supporting input observations, already transformed and normalized.
     rng
-        Used to select additional optimizer start points.
+        Used to select additional optimizer starting points.
     n_restarts_optimizer
         Number of additional starting points.
-    relax_alpha
-        Added to the covariance matrix diagonal
-        to relax the matrix manipulation, should be unnecessary.
-        Corresponds to adding a WhiteKernel.
+    noise_level, noise_bounds
+        Noise hyperparameter prior and bounds.
 
     Returns
     -------
-    The log marginal likelihood of the selected theta.
+    noise_level, noise_level_bounds, vec_alpha, mat_k_inv, lml
+
     """
+    n_observations = mat_x_train.shape[0]
+    assert vec_y_train.shape == (n_observations,), repr(vec_y_train.shape)
+
+    captured_lml = None
+    captured_theta = None
+    captured_noise_level = None
+    captured_mat_l = None
+    captured_vec_alpha = None
 
     def obj_func(theta: np.ndarray, eval_gradient: bool = True):
-        lml, lml_grad = log_marginal_likelihood(
-            theta, eval_gradient=eval_gradient,
-            kernel=kernel, mat_x=mat_x, vec_y=vec_y, relax_alpha=relax_alpha)
+        r"""Calculate the negative log-marginal likelihood of a theta-vector.
+        """
+        # pylint: disable=invalid-unary-operand-type
+        assert len(theta.shape) == 1, repr(theta.shape)
+
+        kernel.theta = theta[:-1]
+        noise_level = np.exp(theta[-1])
+
+        mat_k_gradient = None
         if eval_gradient:
-            return lml, lml_grad
-        return lml
+            mat_k, mat_k_gradient = kernel(mat_x_train, eval_gradient=True)
+            mat_noise_gradient = \
+                noise_level * np.eye(mat_x_train.shape[0])[:, :, np.newaxis]
+            mat_k_gradient = np.dstack((mat_k_gradient, mat_noise_gradient))
+        else:
+            mat_k = kernel(mat_x_train)
 
-    bounds = kernel.bounds
+        mat_k[np.diag_indices_from(mat_k)] += noise_level
 
-    # start optimizing from prior kernel
-    optimal_theta, optimal_lml = minimize_by_gradient(
-        obj_func, kernel.theta, bounds=bounds)
+        try:
+            # false positive: pylint: disable=unexpected-keyword-arg
+            mat_l = cholesky_decomposition(mat_k, lower=True)
+        except np.linalg.LinAlgError:
+            if eval_gradient:
+                return np.inf, np.zeros_like(theta)
+            return np.inf
 
-    # add more restarts
+        # solve the system "K alpha = y" for alpha,
+        # based on the cholesky factorization L.
+        vec_alpha = cholesky_solve((mat_l, True), vec_y_train)
+
+        assert mat_k.shape == (n_observations, n_observations), \
+            repr(mat_k.shape)
+        assert vec_alpha.shape == (n_observations,), repr(vec_alpha.shape)
+
+        lml: float = -0.5 * vec_y_train.dot(vec_alpha)
+        lml -= np.log(np.diag(mat_l)).sum()
+        lml -= len(mat_x_train) / 2 * np.log(2 * np.pi)
+
+        vec_lml_grad: t.Optional[np.ndarray] = None
+        if eval_gradient:
+            mat_tmp = np.outer(vec_alpha, vec_alpha)
+            mat_tmp -= cholesky_solve((mat_l, True), np.eye(len(mat_x_train)))
+            # compute "0.5 * trace(tmp dot K_gradient)"
+            # without constructing the full matrix
+            # as only the diagonal is required
+            vec_lml_grad = \
+                0.5 * np.einsum('ij,ijk->k', mat_tmp, mat_k_gradient)
+
+        # capture optimal theta incl. already computed matrices
+        nonlocal captured_lml, captured_theta, captured_noise_level
+        nonlocal captured_mat_l, captured_vec_alpha
+        if captured_lml is None or lml > captured_lml:
+            captured_lml = lml
+            captured_theta = theta[:-1]
+            captured_noise_level = noise_level
+            captured_mat_l = mat_l
+            captured_vec_alpha = vec_alpha
+
+        # negate the lml for minimization
+        if eval_gradient:
+            assert vec_lml_grad is not None
+            return -lml, -vec_lml_grad
+        return -lml
+
+    # Perform multiple minimization runs.
+    # Usually these functions return the output,
+    # but here we capture the results in the objective function.
+    bounds = np.vstack((kernel.bounds, np.log([noise_bounds])))
+    initial_theta = np.hstack((kernel.theta, np.log([noise_level])))
+    minimize_by_gradient(obj_func, initial_theta, bounds=bounds)
     for _ in range(n_restarts_optimizer):
         theta_prior = rng.uniform(bounds[:, 0], bounds[:, 1])
-        theta_posterior, lml = minimize_by_gradient(
-            obj_func, theta_prior, bounds=bounds)
-        if lml < optimal_lml:  # minimize the lml
-            optimal_theta, optimal_lml = theta_posterior, lml
+        minimize_by_gradient(obj_func, theta_prior, bounds=bounds)
 
-    # select result with minimal (negative) log-marginal likelihood
-    kernel.theta = optimal_theta
-    return -optimal_lml
+    assert captured_theta is not None
+    assert captured_noise_level is not None
+    assert captured_lml is not None
+    assert captured_mat_l is not None
+    assert captured_vec_alpha is not None
 
+    kernel.theta = captured_theta
+    noise_level = captured_noise_level
 
-def log_marginal_likelihood(
-    theta: np.ndarray,
-    eval_gradient: bool = False,
-    *,
-    kernel: Kernel,
-    mat_x: np.ndarray,
-    vec_y: np.ndarray,
-    relax_alpha: float,
-) -> t.Tuple[float, t.Optional[np.ndarray]]:
-    """Calculate the (negated) log marginal likelihood for a specific theta.
+    # Precompute arrays needed at prediction
+    mat_l, vec_alpha = captured_mat_l, captured_vec_alpha
+    mat_l_inv = scipy.linalg.solve_triangular(mat_l.T, np.eye(mat_l.shape[0]))
+    mat_k_inv = mat_l_inv.dot(mat_l_inv.T)
 
-    Parameters
-    ----------
-    theta
-        The selected hyperparameters.
-    eval_gradient
-        Whether the gradient should be computed as well.
-    kernel
-        The kernel to which the theta should be applied.
-    mat_x, vec_y
-        Supporting input observations, already transformed and normalized.
-    relax_alpha
-        Noise level, relaxes the matrix manipulation problems.
-
-    Returns
-    -------
-    float
-        The log-marginal likelihood.
-    ndarray, optional
-        The gradient, if requested.
-    """
-    kernel = kernel.clone_with_theta(theta)
-
-    try:
-        mat_l, vec_alpha, mat_k_gradient = \
-            calculate_prediction_matrices(
-                mat_x, vec_y,
-                kernel=kernel,
-                eval_gradient=eval_gradient,
-                relax_alpha=relax_alpha,
-            )
-    except np.linalg.LinAlgError:
-        vec_log_likelihood_gradient = None
-        if eval_gradient:
-            vec_log_likelihood_gradient = np.zeros_like(theta)
-        return -np.inf, vec_log_likelihood_gradient
-
-    # compute log-likelihood
-    log_likelihood = -0.5 * vec_y.dot(vec_alpha)  # type: float
-    log_likelihood -= np.log(np.diag(mat_l)).sum()
-    log_likelihood -= len(mat_x) / 2 * np.log(2 * np.pi)
-
-    if eval_gradient:
-        mat_tmp = np.outer(vec_alpha, vec_alpha)
-        mat_tmp -= cholesky_solve((mat_l, True), np.eye(len(mat_x)))
-        # compute "0.5 * trace(tmp dot K_gradient)"
-        # without constructing the full matrix
-        # as only the diagonal is required
-        vec_log_likelihood_gradient = \
-            0.5 * np.einsum('ij,ijk->k', mat_tmp, mat_k_gradient)
-
-        return -log_likelihood, -vec_log_likelihood_gradient
-
-    return -log_likelihood, None
-
-
-def calculate_prediction_matrices(
-    mat_x: np.ndarray, vec_y: np.ndarray, *,
-    kernel: Kernel,
-    eval_gradient: bool,
-    relax_alpha: float,
-) -> t.Tuple[np.ndarray, np.ndarray, t.Optional[np.ndarray]]:
-    r"""
-    Arguments
-    ---------
-    mat_x : ndarray, shape (n, n_features)
-        The observed samples.
-    vec_y : ndarray, shape (n)
-        The observation results.
-    kernel : kernel function
-    eval_gradient : bool
-    relax_alpha : float
-        Additional term to make the covariance matrix positive definite.
-
-    Returns
-    -------
-    mat_l : ndarray, shape (n, n)
-        The lower cholesky decomposition of the covariance matrix.
-    vec_alpha : ndarray, shape (n)
-        The observation weights. Solution to "mat_k vec_alpha = vec_y".
-    mat_k_gradient : ndarray, shape (n, n), optional
-        Covariance gradient. Only computed if *eval_gradient* is set.
-
-    Raises
-    ------
-    np.linalg.LinAlgError
-        When the Cholesky decomposition of mat_k fails,
-        i.e. when the covariance matrix was not positive definite.
-    """
-    mat_k_gradient = None
-    if eval_gradient:
-        mat_k, mat_k_gradient = kernel(mat_x, eval_gradient=True)
-    else:
-        mat_k = kernel(mat_x)
-
-    mat_k[np.diag_indices_from(mat_k)] += relax_alpha
-
-    # may raise LinAlgError!
-    # false positive: pylint: disable=unexpected-keyword-arg
-    mat_l = cholesky_decomposition(mat_k, lower=True)
-
-    # solve the system "K alpha = y" for alpha,
-    # based on the cholesky factorization L.
-    vec_alpha = cholesky_solve((mat_l, True), vec_y)
-
-    return mat_l, vec_alpha, mat_k_gradient
+    return noise_level, noise_bounds, vec_alpha, mat_k_inv, captured_lml
 
 
 def _get_kernel_or_default(
     *,
     n_dims: int,
-    prior: t.Optional[Kernel],
-    amplitude_bounds: TBounds,
+    prior: t.Optional[SurrogateModelGPR],
     noise_bounds: TBounds,
+    amplitude_start: float,
+    amplitude_bounds: TBounds,
     length_scale_bounds: t.Union[TBounds, t.List[TBounds]],
     matern_nu: float,
-) -> Kernel:
+) -> t.Tuple[Kernel, float, TBounds]:
 
-    start_amplitude = 1.0
-    assert start_amplitude in ClosedInterval(*amplitude_bounds)
+    assert amplitude_start in ClosedInterval(*amplitude_bounds)
 
     start_noise = 1.0
     assert start_noise in ClosedInterval(*noise_bounds)
@@ -421,15 +434,20 @@ def _get_kernel_or_default(
     assert all(1.0 in ClosedInterval(*dim_bounds)
                for dim_bounds in length_scale_bounds)
 
-    if prior is not None:
-        assert isinstance(prior, SurrogateModelGPR)
-        return clone(prior.kernel)
-
-    amplitude = ConstantKernel(start_amplitude, amplitude_bounds)
+    amplitude = ConstantKernel(amplitude_start, amplitude_bounds)
     # TODO adjust length scale bounds
-    kernel = Matern(
+    main_kernel = Matern(
         length_scale=length_scale,
         length_scale_bounds=length_scale_bounds,
         nu=matern_nu)
-    noise = WhiteKernel(start_noise, noise_bounds)
-    return Sum(Product(amplitude, kernel), noise)
+    kernel = Product(amplitude, main_kernel)
+    noise_level = start_noise
+
+    if prior is not None:
+        assert isinstance(prior, SurrogateModelGPR)
+        assert sorted(kernel.get_params().keys()) \
+            == sorted(prior.kernel.get_params().keys())
+        kernel.theta = prior.kernel.theta
+        noise_level = prior.noise_level
+
+    return kernel, noise_level, noise_bounds
