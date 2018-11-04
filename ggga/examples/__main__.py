@@ -24,10 +24,18 @@ class Example:
     space: Space = attr.ib()
     minima: t.List[t.Tuple[list, float]] = attr.ib()
 
-    def make_objective(self, *, log_y: bool) -> ObjectiveFunction:
+    def make_objective(
+        self, *, log_y: bool, noise_level: float,
+    ) -> ObjectiveFunction:
 
-        async def objective(xs, _rng):
+        async def objective(xs, rng):
             y = self.function(*xs)
+
+            if noise_level != 0.0:
+                noise = noise_level * rng.standard_normal()
+                while y + noise < 0:
+                    noise = noise_level * rng.standard_normal()
+                y += noise
 
             if log_y:
                 assert y > 0, f"ys must be positive, was {y}"
@@ -225,8 +233,9 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     cfg: StrategyConfiguration,
     rng_seed: int,
     log_y: bool,
+    noise_level: float,
 ) -> t.List[plt.Figure]:
-    objective = example.make_objective(log_y=log_y)
+    objective = example.make_objective(log_y=log_y, noise_level=noise_level)
 
     figs = []
     for strategy in strategies:
@@ -295,6 +304,11 @@ def make_argument_parser() -> argparse.ArgumentParser:
         dest='log_y',
         help="Log-transform the objective function.")
     parser.add_argument(
+        '--noise', metavar='NOISE_LEVEL', type=float,
+        dest='noise', default=0.0,
+        help="Standard deviation of test function noise. "
+             "Default: %(default)s.")
+    parser.add_argument(
         '--model', choices=('gpr', 'knn'),
         dest='model', default='gpr',
         help="The surrogate model implementation used for prediction. "
@@ -340,6 +354,7 @@ def main() -> None:
         cfg=strategy_cfg,
         rng_seed=options.seed,
         log_y=options.log_y,
+        noise_level=options.noise,
     ))
 
     if options.interactive:

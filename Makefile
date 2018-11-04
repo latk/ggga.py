@@ -25,12 +25,14 @@ lint:
 install-dev:
 	$(PIP) install -e .[dev]
 
+examples-no-interactive: GGGA_EXAMPLE += --quiet --no-interactive
 examples-no-interactive:
-	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive
-	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --model=knn
-	time $(GGGA_EXAMPLE) goldstein-price --quiet --no-interactive --logy
-	time $(GGGA_EXAMPLE) easom --quiet --no-interactive
-	time $(GGGA_EXAMPLE) himmelblau --quiet --no-interactive
-	time $(GGGA_EXAMPLE) rastrigin2 --quiet --no-interactive
-	time $(GGGA_EXAMPLE) rosenbrock2 --quiet --no-interactive --logy --samples 80
-	time $(GGGA_EXAMPLE) sphere2 --quiet --no-interactive --samples 80
+	time $(GGGA_EXAMPLE) goldstein-price
+	time $(GGGA_EXAMPLE) goldstein-price --model=knn
+	time $(GGGA_EXAMPLE) goldstein-price --logy
+	time $(GGGA_EXAMPLE) easom
+	time $(GGGA_EXAMPLE) himmelblau
+	time $(GGGA_EXAMPLE) rastrigin2
+	time $(GGGA_EXAMPLE) rosenbrock2 --logy --samples 80
+	time $(GGGA_EXAMPLE) sphere2 --samples 80
+	time $(GGGA_EXAMPLE) sphere2 --samples 80 --noise 1.5
