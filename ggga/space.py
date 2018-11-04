@@ -9,10 +9,9 @@ T = t.TypeVar('T')
 
 class Param(abc.ABC, t.Generic[T]):
     def __init__(
-        self, name: str, *, flag: str, fmt: str,
+        self, name: str, *, fmt: str,
     ) -> None:
         self.name: str = name
-        self.flag: str = flag
         self.fmt: str = fmt
 
     @abc.abstractmethod
@@ -60,17 +59,15 @@ class Integer(Param[int]):
     hi: int
 
     def __init__(
-        self, name: str, flag: str, lo: int, hi: int, *,
+        self, name: str, lo: int, hi: int, *,
         fmt: str = '{}',
     ) -> None:
-        super().__init__(name, flag=flag, fmt=fmt)
+        super().__init__(name, fmt=fmt)
         self.lo = lo
         self.hi = hi
 
     def __repr__(self) -> str:
-        return (f'Integer('
-                f'{self.name!r}, {self.flag!r}, '
-                f'{self.lo!r}, {self.hi!r})')
+        return f'Integer({self.name!r}, {self.lo!r}, {self.hi!r})'
 
     def sample(
         self, *,
@@ -128,11 +125,11 @@ class Real(Param[float]):
     hi: float
 
     def __init__(
-        self, name: str, flag: str, lo: float, hi: float, *,
+        self, name: str, lo: float, hi: float, *,
         scale: Scale = None,
         fmt: str = '{:.5f}',
     ) -> None:
-        super().__init__(name, flag=flag, fmt=fmt)
+        super().__init__(name, fmt=fmt)
         self.lo: float = lo
         self.hi: float = hi
         self.scale: t.Optional[Scale] = scale
@@ -141,10 +138,8 @@ class Real(Param[float]):
             assert isinstance(scale, Scale)
 
     def __repr__(self) -> str:
-        return (f'Integer('
-                f'{self.name!r}, {self.flag!r}, '
-                f'{self.lo!r}, {self.hi!r}), '
-                f'scale={self.scale!r}')
+        lo, hi = self.lo, self.hi
+        return f'Integer({self.name!r}, {lo!r}, {hi!r}), scale={self.scale!r})'
 
     def sample(
         self, *,

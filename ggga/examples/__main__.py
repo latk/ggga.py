@@ -44,8 +44,8 @@ EXAMPLES: t.Dict[str, Example] = {}
 EXAMPLES['goldstein-price'] = Example(
     function=goldstein_price,
     space=Space(
-        Real('x_1', '--x1', -2, 2),
-        Real('x_2', '--x2', -2, 2),
+        Real('x_1', -2, 2),
+        Real('x_2', -2, 2),
     ),
     minima=[
         ([0.0, -1.0], 0.0),
@@ -60,8 +60,8 @@ EXAMPLES['goldstein-price'] = Example(
 EXAMPLES['easom'] = Example(
     function=lambda x_1, x_2: easom(x_1, x_2, amplitude=100.0),
     space=Space(
-        Real('x_1', '--x1', -25, 25),
-        Real('x_2', '--x2', -25, 25),
+        Real('x_1', -25, 25),
+        Real('x_2', -25, 25),
     ),
     minima=[
         ([np.pi, np.pi], 0.0)
@@ -71,8 +71,8 @@ EXAMPLES['easom'] = Example(
 EXAMPLES['himmelblau'] = Example(
     function=himmelblau,
     space=Space(
-        Real('x_1', '--x1', -5, 5),
-        Real('x_2', '--x2', -5, 5),
+        Real('x_1', -5, 5),
+        Real('x_2', -5, 5),
     ),
     minima=[
         ([3.0, 2.0], 0.0),
@@ -85,8 +85,8 @@ EXAMPLES['himmelblau'] = Example(
 EXAMPLES['rastrigin2'] = Example(
     function=rastrigin,
     space=Space(
-        Real('x_1', '--x1', -5.12, 5.12),
-        Real('x_2', '--x2', -5.12, 5.12),
+        Real('x_1', -5.12, 5.12),
+        Real('x_2', -5.12, 5.12),
     ),
     minima=[([0.0]*2, 0.0)],
 )
@@ -94,12 +94,12 @@ EXAMPLES['rastrigin2'] = Example(
 EXAMPLES['rastrigin6'] = Example(
     function=rastrigin,
     space=Space(
-        Real('x_1', '--x1', -5.12, 5.12),
-        Real('x_2', '--x2', -5.12, 5.12),
-        Real('x_3', '--x3', -5.12, 5.12),
-        Real('x_4', '--x4', -5.12, 5.12),
-        Real('x_5', '--x5', -5.12, 5.12),
-        Real('x_6', '--x6', -5.12, 5.12),
+        Real('x_1', -5.12, 5.12),
+        Real('x_2', -5.12, 5.12),
+        Real('x_3', -5.12, 5.12),
+        Real('x_4', -5.12, 5.12),
+        Real('x_5', -5.12, 5.12),
+        Real('x_6', -5.12, 5.12),
     ),
     minima=[([0.0]*6, 0.0)],
 )
@@ -107,8 +107,8 @@ EXAMPLES['rastrigin6'] = Example(
 EXAMPLES['rosenbrock2'] = Example(
     function=rosenbrock,
     space=Space(
-        Real('x_1', '--x1', -5.12, 5.12),
-        Real('x_2', '--x2', -5.12, 5.12),
+        Real('x_1', -5.12, 5.12),
+        Real('x_2', -5.12, 5.12),
     ),
     minima=[([1.0]*2, 0.0)],
 )
@@ -116,12 +116,12 @@ EXAMPLES['rosenbrock2'] = Example(
 EXAMPLES['rosenbrock6'] = Example(
     function=rosenbrock,
     space=Space(
-        Real('x_1', '--x1', -5.12, 5.12),
-        Real('x_2', '--x2', -5.12, 5.12),
-        Real('x_3', '--x3', -5.12, 5.12),
-        Real('x_4', '--x4', -5.12, 5.12),
-        Real('x_5', '--x5', -5.12, 5.12),
-        Real('x_6', '--x6', -5.12, 5.12),
+        Real('x_1', -5.12, 5.12),
+        Real('x_2', -5.12, 5.12),
+        Real('x_3', -5.12, 5.12),
+        Real('x_4', -5.12, 5.12),
+        Real('x_5', -5.12, 5.12),
+        Real('x_6', -5.12, 5.12),
     ),
     minima=[([1.0]*6, 0.0)],
 )
@@ -129,8 +129,8 @@ EXAMPLES['rosenbrock6'] = Example(
 EXAMPLES['sphere2'] = Example(
     function=sphere,
     space=Space(
-        Real('x_1', '--x1', -2.0, 2.0),
-        Real('x_2', '--x2', -2.0, 2.0),
+        Real('x_1', -2.0, 2.0),
+        Real('x_2', -2.0, 2.0),
     ),
     minima=[([0.0]*2, 0.0)],
 )
@@ -138,12 +138,12 @@ EXAMPLES['sphere2'] = Example(
 EXAMPLES['sphere6'] = Example(
     function=sphere,
     space=Space(
-        Real('x_1', '--x1', -2.0, 2.0),
-        Real('x_2', '--x2', -2.0, 2.0),
-        Real('x_3', '--x3', -2.0, 2.0),
-        Real('x_4', '--x4', -2.0, 2.0),
-        Real('x_5', '--x5', -2.0, 2.0),
-        Real('x_6', '--x6', -2.0, 2.0),
+        Real('x_1', -2.0, 2.0),
+        Real('x_2', -2.0, 2.0),
+        Real('x_3', -2.0, 2.0),
+        Real('x_4', -2.0, 2.0),
+        Real('x_5', -2.0, 2.0),
+        Real('x_6', -2.0, 2.0),
     ),
     minima=[([0.0]*6, 0.0)],
 )

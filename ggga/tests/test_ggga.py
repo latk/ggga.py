@@ -24,7 +24,7 @@ def describe_gpr():
     from ..space import Space, Real
     from numpy.random import RandomState  # type: ignore
 
-    space = Space(Real('test', '--test', 0.0, 1.0))
+    space = Space(Real('test', 0.0, 1.0))
 
     class SimpleModel:
         def __init__(self, model: SurrogateModelGPR) -> None:
@@ -113,7 +113,7 @@ def describe_gpr():
         ys = sphere(xs.reshape(-1))
         assert np.all(ys == np.array([4.0, 1.0, 0.0, 1.0, 4.0]))
 
-        space = Space(Real('x', '-x', -2, 2))
+        space = Space(Real('x', -2, 2))
         model = SurrogateModelGPR.estimate(
             xs, ys,
             space=space, rng=RandomState(123), prior=None,
@@ -169,8 +169,8 @@ def describe_gpr():
         assert ys.shape == (n_observations,)
 
         space = Space(
-            Real('x', '-x', -2, 2),
-            Real('y', '-y', -2, 2),
+            Real('x', -2, 2),
+            Real('y', -2, 2),
         )
         model = SurrogateModelGPR.estimate(
             xs, ys,
