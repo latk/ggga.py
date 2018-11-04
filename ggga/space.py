@@ -87,7 +87,7 @@ class Integer(Param[int]):
 
     @property
     def size(self) -> int:
-        return self.hi - self.lo
+        return self.hi - self.lo + 1
 
     def is_valid(self, value: int) -> bool:
         return self.lo <= value <= self.hi
@@ -97,10 +97,10 @@ class Integer(Param[int]):
         return 0.0 <= value <= 1.0
 
     def into_transformed(self, value: int) -> float:
-        return (value - self.lo) / self.size
+        return (value - self.lo + 0.5) / self.size
 
     def from_transformed(self, value: float) -> int:
-        return int(np.round(value * self.size + self.lo))
+        return int(np.round(value * self.size - 0.5)) + self.lo
 
     @staticmethod
     def transformed_bounds() -> t.Tuple[float, float]:

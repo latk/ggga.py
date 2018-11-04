@@ -339,3 +339,17 @@ def describe_gpr():
             raise AssertionError(fmt_loc_info(
                 "Prediction does not match skopt:", ~skopt_ok,
                 models=True))
+
+
+def describe_integer_params():
+    def it_transforms_variables_correctly():
+        from .. import Integer
+        param = Integer('x', 0, 4)  # inclusive!
+
+        bins = [0] * 5
+        for x in np.linspace(0.0, 1.0, num=100, endpoint=True):
+            i = param.from_transformed(x)
+            assert 0 <= i <= 4
+            bins[i] += 1
+
+        assert bins == [20] * 5
