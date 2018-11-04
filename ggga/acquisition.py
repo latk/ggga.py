@@ -202,9 +202,6 @@ class RandomWalkAcquisition(AcquisitionStrategy):
             self.space.mutate_transformed(
                 parent_sample_transformed, relscale=relscale, rng=rng)
             for _ in range(self.breadth)]
-        for sample in candidate_samples:
-            assert self.space.is_valid_transformed(sample), \
-                f'mutated transformed sample must be valid: {sample!r}'
 
         candidate_mean, candidate_std = model.predict_transformed_a(
             candidate_samples)

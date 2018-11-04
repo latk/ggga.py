@@ -21,20 +21,6 @@ class Param(abc.ABC, t.Generic[T]):
     ) -> T:
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def mutate_transformed(
-        self, value: float, *, rng: RandomState, relscale: float,
-    ) -> float:
-        raise NotImplementedError
-
-    def mutate(
-        self, value: T, *, rng: RandomState, relscale: float,
-    ) -> T:
-        value_transformed = self.into_transformed(value)
-        value_mutated = self.mutate_transformed(
-            value_transformed, rng=rng, relscale=relscale)
-        return self.from_transformed(value_mutated)
-
     @abc.abstractproperty
     def size(self) -> T:
         raise NotImplementedError
@@ -101,20 +87,6 @@ class Integer(Param[int]):
         else:
             assert hi <= self.hi
         return rng.randint(lo, hi + 1)
-
-    def mutate_transformed(
-        self, x: float, *, rng: RandomState, relscale: float
-    ) -> float:
-        retries = 20
-        for _ in range(retries):
-            mutx = x + rng.standard_normal() * relscale
-            if self.is_valid_transformed(mutx):
-                return mutx
-            relscale *= 0.8
-        raise RuntimeError(
-            f"mutation failed to produce values within bounds"
-            f"\n  last mutx = {mutx}"
-            f"\n  input x   = {x}")
 
     @property
     def size(self) -> int:
@@ -202,20 +174,6 @@ class Real(Param[float]):
             f'bounds [{lo},{hi}] must be within [0,1]'
         size = hi - lo
         return rng.random_sample() * size + lo
-
-    def mutate_transformed(
-        self, x: float, *, rng: RandomState, relscale: float
-    ) -> float:
-        retries = 20
-        for _ in range(retries):
-            mutx = x + rng.standard_normal() * relscale
-            if self.is_valid_transformed(mutx):
-                return mutx
-            relscale *= 0.8
-        raise RuntimeError(
-            f"mutation failed to produce values within bounds"
-            f"\n  last mutx = {mutx}"
-            f"\n  input x   = {x}")
 
     @property
     def size(self) -> float:
@@ -374,8 +332,17 @@ class Space:
     ) -> list:
         if not isinstance(relscale, t.Iterable):
             relscale = [relscale] * self.n_dims
-        return [p.mutate_transformed(x, rng=rng, relscale=s)
-                for p, x, s in zip(self.params, sample_transformed, relscale)]
+        cov = np.diag(relscale)
+        retries = int(20 * np.sqrt(self.n_dims))
+        for _ in range(retries):
+            mut_sample = rng.multivariate_normal(sample_transformed, cov)
+            if self.is_valid_transformed(mut_sample):
+                return mut_sample
+            cov *= 0.9  # make feasibility more likely
+        raise RuntimeError(
+            f"mutation failed to produce values within bounds"
+            f"\n  last mut_sample = {mut_sample}"
+            f"\n  input sample    = {sample_transformed}")
 
     def is_valid(self, sample) -> bool:
         return all(p.is_valid(v) for p, v in zip(self.params, sample)) \
