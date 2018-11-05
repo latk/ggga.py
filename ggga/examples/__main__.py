@@ -11,7 +11,8 @@ from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
 from ..space import Log1pScale
 from ..benchmark_functions import (
-    goldstein_price, easom, himmelblau, rastrigin, rosenbrock, sphere, onemax)
+    goldstein_price, easom, himmelblau, rastrigin, rosenbrock, sphere, onemax,
+    trap)
 from ..outputs import Output
 from ..visualization import PartialDependence
 
@@ -175,6 +176,27 @@ EXAMPLES['onemax4log'] = Example(
         Real('x_2', 0.0, 1.0, scale=Log1pScale(2)),
         Real('x_3', 0.0, 1.0, scale=Log1pScale(2)),
         Real('x_4', 0.0, 1.0, scale=Log1pScale(2)),
+    ),
+    minima=[([0.0]*4, 0.0)],
+)
+
+EXAMPLES['trap2'] = Example(
+    function=trap,
+    space=Space(
+        Real('x_1', -1.0, 1.0),
+        Real('x_2', -1.0, 1.0),
+    ),
+    minima=[([0.0]*2, 0.0)],
+)
+
+
+EXAMPLES['trap4'] = Example(
+    function=trap,
+    space=Space(
+        Real('x_1', -1.0, 1.0),
+        Real('x_2', -1.0, 1.0),
+        Real('x_3', -1.0, 1.0),
+        Real('x_4', -1.0, 1.0),
     ),
     minima=[([0.0]*4, 0.0)],
 )

@@ -166,3 +166,83 @@ def onemax(*xs: np.ndarray) -> float:
         raise TypeError("at least one dimension required")
 
     return sum(x for x in xs)
+
+
+def trap(*xs: np.ndarray, p_well: float = 0.1) -> float:
+    r"""Like One-Max, but has misleading gradient.
+
+    Arguments:
+    p_well (float): probability of a random point landing within the well.
+
+    Bounds: 0 <= |xi| <= 1
+
+    Optimum: f(0, ..., 0) = 0
+
+    >>> trap(*[0.0]*4, p_well=0.1)
+    0.0
+    >>> trap(*[1.0]*4, p_well=0.1)
+    0.4
+    """
+
+    if not xs:
+        raise TypeError("at least one dimension required")
+
+    # Find the threshold so that P[ Sum(X_i) <= threshold ] = p_well
+    # where X_i ~ U(0, 1) is are iid random variables
+    # *** Irwin-Hall distribution ***
+    # Actually we don't need to find the threshold,
+    # as we can simply calculate CDF[IrwinHall[n]](value)
+
+    value = sum(abs(x) for x in xs)
+    if _irwin_hall_cdf(value, len(xs)) <= p_well:
+        return value
+
+    return len(xs) - value + p_well * len(xs)
+
+
+def _irwin_hall_cdf(x: float, n: int) -> float:
+    r"""CDF of Irwin-Hall distribution (Uniform Sum distribution)
+
+    CDF(x) = 1/n! * Sum_k=0..floor(x) [ (-1)^k · choose(n,k) · (x-k)^n ]
+
+    The CDF is zero for a sum of zero:
+    >>> [_irwin_hall_cdf(0.0, n) for n in range(1, 6+1)]
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+    The CDF is 1 for the max of the sum:
+    >>> [_irwin_hall_cdf(n, n) for n in range(1, 6+1)]
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    The CDF is 1 beyond the max:
+    >>> [_irwin_hall_cdf(1.1 * n, n) for n in range(1, 6+1)]
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+
+    The CDF is nonzero a bit above the min:
+    >>> [_irwin_hall_cdf(0.25*n, n) > 0 for n in range(1, 6+1)]
+    [True, True, True, True, True, True]
+
+    The CDF is 0.5 at half the sum:
+    >>> [_irwin_hall_cdf(n/2, n) for n in range(1, 6+1)]
+    [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+
+    The CDF is symmetric:
+    >>> [round(_irwin_hall_cdf(x*3, 3) + _irwin_hall_cdf((1-x)*3, 3), 5)
+    ...  for x in [0.1, 0.2, 0.3, 0.4, 0.5]]
+    [1.0, 1.0, 1.0, 1.0, 1.0]
+    """
+    assert isinstance(n, int)
+    assert n >= 1
+
+    if x < 0:
+        return 0.0
+
+    if x > n:
+        return 1.0
+
+    if n == 1:
+        return float(x)
+
+    from math import factorial
+    from scipy.special import binom  # type: ignore
+    return 1/factorial(n) * sum((-1)**k * binom(n, k) * (x - k)**n
+                                for k in range(int(x) + 1))
