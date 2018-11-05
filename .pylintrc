@@ -189,7 +189,7 @@ function-naming-style=snake_case
 #function-rgx=
 
 # Good variable names which should always be accepted, separated by a comma
-good-names=i, j, k, _,
+good-names=i, j, k, n, _,
            ex,  # for except: clauses
            T,  # for type parameters
            ax,  # for matplotlib axis
@@ -372,7 +372,7 @@ max-bool-expr=5
 max-branches=12
 
 # Maximum number of locals for function / method body
-max-locals=15
+max-locals=20
 
 # Maximum number of parents for a class (see R0901).
 max-parents=7
