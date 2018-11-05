@@ -36,3 +36,4 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) rosenbrock2 --logy --samples 80
 	time $(GGGA_EXAMPLE) sphere2 --samples 80
 	time $(GGGA_EXAMPLE) sphere2 --samples 80 --noise 1.5
+	time $(GGGA_EXAMPLE) onemax4log --samples 80

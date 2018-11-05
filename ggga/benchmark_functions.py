@@ -140,3 +140,29 @@ def sphere(*xs: np.ndarray) -> np.ndarray:
         raise TypeError("at least one dimension required")
 
     return sum(x**2 for x in xs)
+
+
+def onemax(*xs: np.ndarray) -> float:
+    r"""One-Max function.
+
+    Bounds: 0 <= xi <= 1
+
+    Optimum: f(0, ..., 0) = 0
+
+    >>> onemax(*[0.0]*1)
+    0.0
+    >>> onemax(*[0.0]*2)
+    0.0
+    >>> onemax(*[0.0]*6)
+    0.0
+
+    >>> onemax(*[1.0]*1)
+    1.0
+    >>> onemax(*[1.0]*6)
+    6.0
+    """
+
+    if not xs:
+        raise TypeError("at least one dimension required")
+
+    return sum(x for x in xs)
