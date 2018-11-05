@@ -17,7 +17,7 @@ from ..outputs import Output
 from ..visualization import PartialDependence
 
 StrategyResult = t.Tuple[
-    SurrogateModel, np.ndarray, np.ndarray, t.Optional[float]]
+    SurrogateModel, np.ndarray, np.ndarray, float, np.ndarray]
 
 
 @attr.s
@@ -245,7 +245,8 @@ class RandomStrategy(Strategy):
         ])
         model = cfg.surrogate_model_class.estimate(
             xs, ys, space=cfg.space, rng=rng, prior=None)
-        return model, xs, ys, None
+        i_best = np.argmin(ys)
+        return model, xs, ys, ys[i_best], xs[i_best]
 
 
 class GGGAStrategy(Strategy):
@@ -267,7 +268,8 @@ class GGGAStrategy(Strategy):
                 Output(space=cfg.space, log_file=None)
                 if cfg.quiet else None),
         )
-        return res.model, res.xs, res.ys, res.fmin
+        best = res.best_individual
+        return res.model, res.xs, res.ys, best.fitness, best.sample
 
 # TODO: Sobol strategy, Irace strategy
 
@@ -286,11 +288,13 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     for strategy in strategies:
         rng = RandomState(rng_seed)
 
-        model, xs, ys, fmin = await strategy.run(objective, rng=rng, cfg=cfg)
+        model, xs, ys, fmin, min_sample = \
+            await strategy.run(objective, rng=rng, cfg=cfg)
 
         compare_model_with_minima_io(
             model, example.minima,
             fmin=fmin,
+            min_sample=min_sample,
             log_y=log_y,
             n_samples=cfg.n_samples,
             sample_type=strategy.name,
@@ -307,17 +311,23 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
 
 def compare_model_with_minima_io(
     model: SurrogateModel, minima: t.List[t.Tuple[list, float]], *,
-    fmin: t.Optional[float],
+    fmin: float,
+    min_sample: list,
     log_y: bool,
     n_samples: int,
     sample_type: str,
 ) -> None:
 
     if log_y:
-        fmin = None if fmin is None else np.exp(fmin)
+        fmin = np.exp(fmin)
 
-    fmin_str = ("(None)" if fmin is None else f"{fmin:.2f}")
-    print(f"Minima after {n_samples} {sample_type} samples: {fmin_str}")
+    sample_str = ', '.join(
+        param.fmt.format(x)
+        for x, param in zip(min_sample, model.space.params))
+
+    print(
+        f"Minima after {n_samples} {sample_type} samples: "
+        f"{fmin:.2f} @ ({sample_str})")
     for x_min, y_min_expected in minima:
         y_min, y_min_std = model.predict(x_min)
         assert y_min_std is not None
