@@ -199,9 +199,6 @@ class Real(Param[float]):
 
         x = x * self.size + self.lo
 
-        if self.scale == 'log1p':
-            x = np.expm1(x)
-
         return x
 
     @staticmethod
