@@ -5,6 +5,7 @@ import warnings
 from numpy.random import RandomState  # type: ignore
 import numpy as np  # type: ignore
 import scipy.optimize  # type: ignore
+import yaml
 
 TNumpy = t.TypeVar('TNumpy', np.ndarray, float)
 
@@ -87,3 +88,40 @@ def coerce_array(
     if isinstance(arrayish, np.ndarray):
         return arrayish
     return np.array(arrayish)
+
+
+def yaml_constructor(tag, safe=False):
+    def decorator(constructor):
+        yaml.add_constructor(
+            tag, constructor,
+            Loader=(yaml.SafeLoader if safe else yaml.Loader),
+        )
+        return constructor
+
+    return decorator
+
+
+class Validator:
+
+    @staticmethod
+    def is_instance(expected_type=None):
+        def validate(_obj, attr, value):
+            if expected_type is None:
+                my_expected_type = attr.type
+            else:
+                my_expected_type = expected_type
+            if not isinstance(value, my_expected_type):
+                typename = getattr(my_expected_type, '__qualname__')
+                raise TypeError(f"{attr.name} must be instance of {typename}")
+
+        return validate
+
+    @staticmethod
+    def is_posint(_obj, attr, value):
+        if not (isinstance(value, int) and value > 0):
+            raise TypeError(f"{attr.name} must be a positive integer")
+
+    @staticmethod
+    def is_percentage(_obj, attr, value):
+        if not (isinstance(value, float) and 0.0 <= value <= 1.0):
+            raise TypeError(f"{attr.name} must be a fraction from 0.0 to 1.0")

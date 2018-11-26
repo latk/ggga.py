@@ -136,8 +136,7 @@ class Minimizer:
 
         acquisition_strategy = self.acquisition_strategy
         if acquisition_strategy is None:
-            acquisition_strategy = self._make_default_acquisition_strategy(
-                space)
+            acquisition_strategy = self._make_default_acquisition_strategy()
         assert acquisition_strategy is not None
 
         if outputs is None:
@@ -154,19 +153,14 @@ class Minimizer:
 
         return await instance.run(rng=rng)
 
-    def _make_default_acquisition_strategy(
-        self, space: Space,
-    ) -> AcquisitionStrategy:
+    def _make_default_acquisition_strategy(self) -> AcquisitionStrategy:
         return ChainedAcquisition(
             RandomWalkAcquisition(
                 breadth=3,
                 candidate_chain_length=1,
                 relscale_attenuation=self.relscale_attenuation,
-                space=space,
             ),
-            RandomReplacementAcquisition(
-                n_replacements=self.popsize, space=space,
-            ),
+            RandomReplacementAcquisition(n_replacements=self.popsize),
         )
 
 
@@ -293,7 +287,8 @@ class _MinimizationInstance:
         duration = timer(self.config.time_source)
 
         offspring = list(self.acquisition_strategy.acquire(
-            population, model=model, rng=rng, fmin=fmin, relscale=relscale))
+            population, model=model, space=self.space,
+            rng=rng, fmin=fmin, relscale=relscale))
 
         self.outputs.event_acquisition_completed(duration=duration())
 

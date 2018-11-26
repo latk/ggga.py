@@ -6,6 +6,7 @@ import typing as t
 import attr
 import numpy as np  # type: ignore
 import matplotlib.pyplot as plt  # type: ignore
+import yaml
 
 from .. import Space, Real, Minimizer, ObjectiveFunction, RandomState
 from .. import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
@@ -15,6 +16,7 @@ from ..benchmark_functions import (
     trap)
 from ..outputs import Output
 from ..visualization import PartialDependence
+from ..util import yaml_constructor
 
 StrategyResult = t.Tuple[
     SurrogateModel, np.ndarray, np.ndarray, float, np.ndarray]
@@ -252,8 +254,20 @@ class RandomStrategy(Strategy):
 class GGGAStrategy(Strategy):
     name = 'GGGA'
 
+    def __init__(
+        self, *,
+        minimizer_args: dict = None,
+    ) -> None:
+        self.minimizer_args = minimizer_args or {}
+
     @staticmethod
+    @yaml_constructor('!GGGA', safe=True)
+    def from_yaml(loader: yaml.Loader, node) -> 'GGGAStrategy':
+        args = loader.construct_mapping(node)
+        return GGGAStrategy(minimizer_args=args)
+
     async def run(
+        self,
         objective: ObjectiveFunction, *,
         cfg: StrategyConfiguration,
         rng: RandomState,
@@ -261,6 +275,7 @@ class GGGAStrategy(Strategy):
         minimizer = Minimizer(
             max_nevals=cfg.n_samples,
             surrogate_model_class=cfg.surrogate_model_class,
+            **self.minimizer_args,
         )
         res = await minimizer.minimize(
             objective, space=cfg.space, rng=rng,
@@ -339,6 +354,27 @@ def compare_model_with_minima_io(
             f"expected {y_min_expected:.2f}")
 
 
+def load_strategy(spec: str) -> Strategy:
+    if spec.startswith('!'):
+        try:
+            strategy = yaml.safe_load(spec)
+        except Exception as ex:
+            raise argparse.ArgumentTypeError(
+                f"YAML did not parse successfully: {ex}")
+        if not isinstance(strategy, Strategy):
+            raise argparse.ArgumentTypeError(
+                f"YAML did not represent a strategy, "
+                f"but <{type(strategy).__name__}>: {strategy!r}")
+        return strategy
+
+    strategies: t.List[t.Type[Strategy]] = [GGGAStrategy, RandomStrategy]
+    for strategy_class in strategies:
+        if spec.casefold() == t.cast(str, strategy_class.name).casefold():
+            return strategy_class()
+
+    raise argparse.ArgumentTypeError(f"Cannot find a strategy called {spec!r}")
+
+
 def make_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.description = "Run an optimization benchmark function."
@@ -378,6 +414,12 @@ def make_argument_parser() -> argparse.ArgumentParser:
         '--seed', metavar='SEED', type=int,
         dest='seed', default=7861,
         help="Seed for reproducible runs. Default: %(default)s.")
+    parser.add_argument(
+        '-s', '--strategy', metavar='STRATEGY', type=load_strategy,
+        dest='strategies', action='append',
+        help="Which optimization strategies will be used. "
+             "Can be 'random', 'ggga', "
+             "or a YAML document describing the strategy.")
 
     return parser
 
@@ -393,6 +435,10 @@ def main() -> None:
     else:
         raise ValueError(f"Unknown argument value: --model {options.model}")
 
+    strategies = options.strategies
+    if not strategies:
+        strategies = [RandomStrategy(), GGGAStrategy()]
+
     example = EXAMPLES[options.example]
 
     strategy_cfg = StrategyConfiguration(
@@ -405,7 +451,7 @@ def main() -> None:
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_example_with_strategies(
         options.example, example,
-        strategies=[RandomStrategy(), GGGAStrategy()],
+        strategies=strategies,
         cfg=strategy_cfg,
         rng_seed=options.seed,
         log_y=options.log_y,

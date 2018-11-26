@@ -7,7 +7,7 @@ import attr
 import scipy.stats  # type: ignore
 
 from .surrogate_model import SurrogateModel
-from .util import minimize_by_gradient, TNumpy
+from .util import minimize_by_gradient, TNumpy, yaml_constructor, Validator
 from .individual import Individual
 from .space import Space
 
@@ -23,6 +23,7 @@ class AcquisitionStrategy(abc.ABC):
         relscale: np.ndarray,
         rng: RandomState,
         fmin: float,
+        space: Space,
     ) -> t.Iterator[Individual]:
         pass
 
@@ -31,17 +32,31 @@ class ChainedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
         self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
+        if not strategies:
+            raise TypeError("at least one strategy required")
+
+        for substrategy in strategies:
+            if not isinstance(substrategy, AcquisitionStrategy):
+                raise TypeError(f"not an AcquisitionStrategy: {substrategy!r}")
+
+    @staticmethod
+    @yaml_constructor('!ChainedAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'ChainedAcquisition':
+        return ChainedAcquisition(*loader.construct_sequence(node))
+
     def acquire(
         self, population: IterableIndividuals, *,
         model: SurrogateModel,
         relscale: np.ndarray,
         rng: RandomState,
         fmin: float,
+        space: Space,
     ):
         offspring = population
         for strategy in self.strategies:
             offspring = strategy.acquire(
-                offspring, model=model, relscale=relscale, rng=rng, fmin=fmin)
+                offspring, model=model, space=space,
+                relscale=relscale, rng=rng, fmin=fmin)
         return offspring
 
 
@@ -49,19 +64,33 @@ class HedgedAcquisition(AcquisitionStrategy):
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
         self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
+        if not strategies:
+            raise TypeError("at least one strategy required")
+
+        for substrategy in strategies:
+            if not isinstance(substrategy, AcquisitionStrategy):
+                raise TypeError("not an AcquisitionStrategy: {substrategy!r}")
+
+    @staticmethod
+    @yaml_constructor('!HedgedAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'HedgedAcquisition':
+        return HedgedAcquisition(*loader.load_sequence(node))
+
     def acquire(
         self, population: IterableIndividuals, *,
         model: SurrogateModel,
         relscale: np.ndarray,
         rng: RandomState,
         fmin: float,
+        space: Space,
     ):
         buckets: t.List[t.List[Individual]] = [[] for _ in self.strategies]
         for parent in population:
             buckets[rng.randint(len(buckets))].append(parent)
         for bucket, strategy in zip(buckets, self.strategies):
             yield from strategy.acquire(
-                bucket, model=model, relscale=relscale, rng=rng, fmin=fmin)
+                bucket, model=model, space=space,
+                relscale=relscale, rng=rng, fmin=fmin)
 
 
 @attr.s
@@ -76,18 +105,33 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
     """
 
     n_replacements: int = attr.ib()
-    space: Space = attr.ib()
-    hedge_via_prediction: bool = True
-    relscale_initial: float = 0.1
+    n_replacements.validator(Validator.is_posint)  # type: ignore
+
+    hedge_via_prediction: bool = attr.ib(default=True)
+    hedge_via_prediction.validator(Validator.is_instance())  # type: ignore
+
+    relscale_initial: float = attr.ib(default=0.1)
+    relscale_initial.validator(Validator.is_percentage)  # type: ignore
+
     subacquisition: AcquisitionStrategy = attr.ib()
+    subacquisition.validator(Validator.is_instance())  # type: ignore
+
+    @staticmethod
+    @yaml_constructor('!RandomReplacementAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'RandomReplacementAcquisition':
+        if node.id == 'scalar':
+            return RandomReplacementAcquisition(
+                n_replacements=loader.construct_scalar(node))
+        else:
+            return RandomReplacementAcquisition(
+                **loader.construct_mapping(node))
 
     @subacquisition.default
     def _subacquisition_default(self):
         return RandomWalkAcquisition(
             breadth=5,
             candidate_chain_length=3,
-            relscale_attenuation=0.5,
-            space=self.space)
+            relscale_attenuation=0.5)
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -95,15 +139,17 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
         relscale: np.ndarray,
         rng: RandomState,
         fmin: float,
+        space: Space,
     ):
         relscale = np.clip(relscale, None, self.relscale_initial)
 
         replacements = [
-            Individual(self.space.sample(rng=rng))
+            Individual(space.sample(rng=rng))
             for _ in range(self.n_replacements)]
 
         replacements = list(self.subacquisition.acquire(
-            replacements, model=model, relscale=relscale, rng=rng, fmin=fmin))
+            replacements, model=model, space=space,
+            relscale=relscale, rng=rng, fmin=fmin))
 
         def key_expected_improvement(ind: Individual) -> float:
             return ind.expected_improvement
@@ -161,9 +207,18 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
 @attr.s
 class RandomWalkAcquisition(AcquisitionStrategy):
     breadth: int = attr.ib()
+    breadth.validator(Validator.is_posint)  # type: ignore
+
     candidate_chain_length: int = attr.ib()
+    candidate_chain_length.validator(Validator.is_posint)  # type: ignore
+
     relscale_attenuation: float = attr.ib()
-    space: Space = attr.ib()
+    relscale_attenuation.validator(Validator.is_percentage)  # type: ignore
+
+    @staticmethod
+    @yaml_constructor('!RandomWalkAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'RandomWalkAcquisition':
+        return RandomWalkAcquisition(**loader.construct_mapping(node))
 
     def acquire(
         self, population: IterableIndividuals, *,
@@ -171,6 +226,7 @@ class RandomWalkAcquisition(AcquisitionStrategy):
         relscale: np.ndarray,
         rng: RandomState,
         fmin: float,
+        space: Space,
     ):
         offspring = population
 
@@ -183,6 +239,7 @@ class RandomWalkAcquisition(AcquisitionStrategy):
                     fmin=fmin,
                     rng=rng,
                     model=model,
+                    space=space,
                 )
                 for parent in offspring
             ]
@@ -195,11 +252,12 @@ class RandomWalkAcquisition(AcquisitionStrategy):
         fmin: float,
         rng: RandomState,
         model: SurrogateModel,
+        space: Space,
     ) -> Individual:
-        parent_sample_transformed = self.space.into_transformed(parent.sample)
+        parent_sample_transformed = space.into_transformed(parent.sample)
 
         candidate_samples = [
-            self.space.mutate_transformed(
+            space.mutate_transformed(
                 parent_sample_transformed, relscale=relscale, rng=rng)
             for _ in range(self.breadth)]
 
@@ -210,7 +268,7 @@ class RandomWalkAcquisition(AcquisitionStrategy):
 
         i = np.argmax(candidate_ei)
         return Individual(
-            self.space.from_transformed(candidate_samples[i]),
+            space.from_transformed(candidate_samples[i]),
             prediction=candidate_mean[i],
             expected_improvement=candidate_ei[i])
 
@@ -218,16 +276,16 @@ class RandomWalkAcquisition(AcquisitionStrategy):
 @attr.s
 class GradientAcquisition(AcquisitionStrategy):
     breadth: int = attr.ib()
-    space: Space = attr.ib()
     # jitter_factor: float = 1/20
 
     def acquire(
         self, population: IterableIndividuals, *,
         model: SurrogateModel, relscale: np.ndarray, rng: RandomState,
         fmin: float,
+        space: Space,
     ):
         def suggest_neighbor(transformed: Sample) -> Sample:
-            return self.space.mutate_transformed(
+            return space.mutate_transformed(
                 transformed, relscale=relscale, rng=rng)
 
         def objective(transformed: Sample) -> float:
@@ -236,20 +294,20 @@ class GradientAcquisition(AcquisitionStrategy):
             return -expected_improvement(mean[0], std[0], fmin)
 
         def optimize_via_gradient(
-            transformed: Sample,
+            transformed: Sample
         ) -> t.Tuple[Sample, float]:
             opt_sample, opt_fitness = minimize_by_gradient(
                 objective, transformed,
                 approx_grad=True,
-                bounds=[p.transformed_bounds() for p in self.space.params],
+                bounds=[p.transformed_bounds() for p in space.params],
             )
-            assert self.space.is_valid_transformed(opt_sample), \
+            assert space.is_valid_transformed(opt_sample), \
                 f"optimized sample (transformed) not valid: {opt_sample}"
             return opt_sample, opt_fitness
 
         for parent in population:
             sample = self._optimize_sample_with_restart(
-                self.space.into_transformed(parent.sample),
+                space.into_transformed(parent.sample),
                 suggest_neighbor=suggest_neighbor,
                 optimize_sample=optimize_via_gradient,
             )
@@ -258,7 +316,7 @@ class GradientAcquisition(AcquisitionStrategy):
             assert vec_std is not None
 
             yield Individual(
-                self.space.from_transformed(sample),
+                space.from_transformed(sample),
                 prediction=vec_mean[0],
                 expected_improvement=expected_improvement(
                     vec_mean[0], vec_std[0], fmin),
