@@ -278,8 +278,8 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     prev_min_fitness = np.inf
     min_fitness = []
     for generation in ind_by_generation:
-        fitness = min(ind.fitness for ind in generation)
-        prev_min_fitness = min(prev_min_fitness, fitness)
+        observation = min(ind.observation for ind in generation)
+        prev_min_fitness = min(prev_min_fitness, observation)
         min_fitness.append(prev_min_fitness)
 
     fig, (utility_ax, ei_ax) = plt.subplots(2, 1, sharex=True)
@@ -288,7 +288,7 @@ def plot_convergence(all_evaluations: t.List[Individual]):
     # utility/fitness plot
     sns.stripplot(
         x=[ind.gen for ind in all_evaluations],
-        y=[ind.fitness for ind in all_evaluations],
+        y=[ind.observation for ind in all_evaluations],
         jitter=True,
         ax=utility_ax,
         palette=palette,
@@ -323,7 +323,7 @@ def plot_observations_against_model(
     if ax is None:
         fig, ax = plt.subplots()
 
-    observed_data = np.array([ind.fitness for ind in all_evaluations])
+    observed_data = np.array([ind.observation for ind in all_evaluations])
     modelled_data = model.predict_a(
         [ind.sample for ind in all_evaluations], return_std=False)
     # plot the data

@@ -4,7 +4,7 @@ import numpy as np  # type: ignore
 class Individual:
     def __init__(
         self, sample: list, *,
-        fitness: float = None,
+        observation: float = None,
         gen: int = None,
         expected_improvement: float = None,
         prediction: float = None,
@@ -15,7 +15,7 @@ class Individual:
 
         self._cost = cost
         self._expected_improvement = expected_improvement
-        self._fitness = fitness
+        self._observation = observation
         self._gen = gen
         self._prediction = prediction
 
@@ -29,11 +29,11 @@ class Individual:
 
         cost = default(self._cost, np.nan)
         expected_improvement = default(self._expected_improvement, np.nan)
-        fitness = default(self._fitness, np.nan)
+        observation = default(self._observation, np.nan)
         gen = default(self._gen, np.nan)
         prediction = default(self._prediction, np.nan)
 
-        return (f'Individual({fitness} @{cost:.2f} [{sample}]'
+        return (f'Individual({observation} @{cost:.2f} [{sample}]'
                 f' prediction: {prediction}'
                 f' ei: {expected_improvement}'
                 f' gen: {gen})')
@@ -43,14 +43,14 @@ class Individual:
         return self._sample
 
     @property
-    def fitness(self) -> float:
-        assert self._fitness is not None
-        return self._fitness
+    def observation(self) -> float:
+        assert self._observation is not None
+        return self._observation
 
-    @fitness.setter
-    def fitness(self, value: float) -> None:
-        assert self._fitness is None
-        self._fitness = value
+    @observation.setter
+    def observation(self, value: float) -> None:
+        assert self._observation is None
+        self._observation = value
 
     @property
     def cost(self) -> float:
@@ -96,7 +96,7 @@ class Individual:
         return all(field is not None for field in (
             self._cost,
             self._expected_improvement,
-            self._fitness,
+            self._observation,
             self._gen,
             self._prediction,
         ))

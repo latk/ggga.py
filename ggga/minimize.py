@@ -36,13 +36,13 @@ class OptimizationResult:
 
         self.all_individuals = all_individuals
         self.best_individual = min(
-            all_individuals, key=lambda ind: ind.fitness)
+            all_individuals, key=lambda ind: ind.observation)
         self.all_models = all_models
         self.duration = duration
 
     def best_n(self, how_many: int) -> t.List[Individual]:
         sorted_individuals = sorted(
-            self.all_individuals, key=lambda ind: ind.fitness)
+            self.all_individuals, key=lambda ind: ind.observation)
         return sorted_individuals[:how_many]
 
     @property
@@ -55,11 +55,11 @@ class OptimizationResult:
 
     @property
     def ys(self) -> np.ndarray:
-        return np.array([ind.fitness for ind in self.all_individuals])
+        return np.array([ind.observation for ind in self.all_individuals])
 
     @property
     def fmin(self) -> float:
-        return self.best_individual.fitness
+        return self.best_individual.observation
 
 
 @attr.s(frozen=True, cmp=False, auto_attribs=True)
@@ -187,7 +187,7 @@ class _MinimizationInstance:
         all_models.append(model)
 
         generation = 0
-        fmin: float = min(ind.fitness for ind in all_evaluations)
+        fmin: float = min(ind.observation for ind in all_evaluations)
         while len(all_evaluations) < config.max_nevals:
             generation += 1
             relscale_bound = self._relscale_at_gen(generation)
@@ -209,7 +209,7 @@ class _MinimizationInstance:
             all_models.append(model)
 
             population = self._select(parents=population, offspring=offspring)
-            fmin = min(fmin, min(ind.fitness for ind in population))
+            fmin = min(fmin, min(ind.observation for ind in population))
 
         return OptimizationResult(
             all_individuals=all_evaluations,
@@ -237,8 +237,8 @@ class _MinimizationInstance:
             for ind in individuals
         ))
 
-        for ind, (fitness, cost) in zip(individuals, results):
-            ind.fitness = fitness
+        for ind, (observation, cost) in zip(individuals, results):
+            ind.observation = observation
             ind.cost = cost
             ind.gen = gen
             assert ind.is_fully_initialized(), repr(ind)
@@ -256,7 +256,7 @@ class _MinimizationInstance:
 
         model = t.cast(t.Any, self.config.surrogate_model_class).estimate(
             [ind.sample for ind in all_evaluations],
-            [ind.fitness for ind in all_evaluations],
+            [ind.observation for ind in all_evaluations],
             space=self.space, rng=rng, prior=prev_model,
             **self.config.surrogate_model_args,
         )
@@ -320,7 +320,7 @@ def select_next_population(
         select = ind_offspring
         reject = ind_parent
 
-        if reject.fitness < select.fitness:
+        if reject.observation < select.observation:
             select, reject = reject, select
 
         selected.append(select)
@@ -338,7 +338,7 @@ def replace_worst_n_individuals(
     Allow the top N individuals from the replacement pool
     to become part of the population, if they have better fitness.
     """
-    by_fitness = operator.attrgetter('fitness')
+    by_fitness = operator.attrgetter('observation')
     candidates = sorted(replacement_pool, key=by_fitness)[:replace_worst_n]
     chosen = sorted(population + candidates, key=by_fitness)[:len(population)]
     return chosen

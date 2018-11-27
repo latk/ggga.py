@@ -284,7 +284,7 @@ class GGGAStrategy(Strategy):
                 if cfg.quiet else None),
         )
         best = res.best_individual
-        return res.model, res.xs, res.ys, best.fitness, best.sample
+        return res.model, res.xs, res.ys, best.observation, best.sample
 
 # TODO: Sobol strategy, Irace strategy
 

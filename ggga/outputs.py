@@ -30,7 +30,7 @@ class IndividualsToTable:
     @staticmethod
     def individual_to_row(ind: Individual) -> t.Iterable:
         yield ind.gen
-        yield ind.fitness
+        yield ind.observation
         yield ind.prediction
         yield ind.expected_improvement
         yield ind.cost
@@ -155,7 +155,7 @@ class WriteHumanReadableOutput(OutputEventHandler):
             data=[
                 list(self._individuals_table.individual_to_row(ind))
                 for ind in sorted(individuals,
-                                  key=operator.attrgetter('fitness'))],
+                                  key=operator.attrgetter('observation'))],
         ))
 
     def event_model_trained(
