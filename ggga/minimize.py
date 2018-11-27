@@ -75,6 +75,8 @@ class Minimizer:
     surrogate_model_args : dict
     acquisition_strategy : AcquisitionStrategy, optional
     time_source : TimeSource
+    select_via_posterior: bool
+    fmin_via_posterior: bool
     """
 
     popsize: int = 10
@@ -85,6 +87,8 @@ class Minimizer:
     surrogate_model_args: dict = dict()
     acquisition_strategy: t.Optional[AcquisitionStrategy] = None
     time_source: TimeSource = time.time
+    select_via_posterior: bool = False
+    fmin_via_posterior: bool = True
 
     def __attrs_post_init__(self)-> None:
         assert self.popsize < self.max_nevals
@@ -99,6 +103,8 @@ class Minimizer:
         surrogate_model_args: dict = None,
         acquisition_strategy: AcquisitionStrategy = None,
         time_source: TimeSource = None,
+        select_via_posterior: bool = None,
+        fmin_via_posterior: bool = None,
     ) -> 'Minimizer':
 
         TValue = t.TypeVar('TValue')
@@ -121,6 +127,10 @@ class Minimizer:
             acquisition_strategy=default(
                 acquisition_strategy, self.acquisition_strategy),
             time_source=default(time_source, self.time_source),
+            select_via_posterior=default(
+                select_via_posterior, self.select_via_posterior),
+            fmin_via_posterior=default(
+                fmin_via_posterior, self.fmin_via_posterior),
         )
 
     async def minimize(
@@ -145,6 +155,8 @@ class Minimizer:
             space=space,
             outputs=outputs,
             acquisition_strategy=acquisition_strategy,
+            select_via_posterior=self.select_via_posterior,
+            fmin_via_posterior=self.fmin_via_posterior,
         )
 
         return await instance.run(rng=rng)
@@ -164,6 +176,8 @@ class _MinimizationInstance:
     space: Space = attr.ib()
     outputs: OutputEventHandler = attr.ib()
     acquisition_strategy: AcquisitionStrategy = attr.ib()
+    select_via_posterior: bool = attr.ib()
+    fmin_via_posterior: bool = attr.ib()
 
     async def run(self, *, rng: RandomState) -> OptimizationResult:
         config: Minimizer = self.config
@@ -186,8 +200,17 @@ class _MinimizationInstance:
             all_evaluations, gen=0, prev_model=None, rng=rng)
         all_models.append(model)
 
+        def find_fmin(
+            individuals: t.Iterable[Individual], *, model: SurrogateModel,
+        ) -> float:
+            fmin_operator = self._make_fitness_operator(
+                with_posterior=self.fmin_via_posterior,
+                model=model)
+            return min(fmin_operator(ind) for ind in individuals)
+
+        fmin: float = find_fmin(all_evaluations, model=model)
+
         generation = 0
-        fmin: float = min(ind.observation for ind in all_evaluations)
         while len(all_evaluations) < config.max_nevals:
             generation += 1
             relscale_bound = self._relscale_at_gen(generation)
@@ -208,8 +231,9 @@ class _MinimizationInstance:
                 all_evaluations, gen=generation, rng=rng, prev_model=model)
             all_models.append(model)
 
-            population = self._select(parents=population, offspring=offspring)
-            fmin = min(fmin, min(ind.observation for ind in population))
+            population = self._select(
+                parents=population, offspring=offspring, model=model)
+            fmin = find_fmin(all_evaluations, model=model)
 
         return OptimizationResult(
             all_individuals=all_evaluations,
@@ -224,6 +248,21 @@ class _MinimizationInstance:
             Individual(self.space.sample(rng=rng))
             for _ in range(self.config.popsize)
         ]
+
+    @staticmethod
+    def _make_fitness_operator(
+        *, with_posterior: bool, model: SurrogateModel,
+    ) -> t.Callable[[Individual], float]:
+
+        if with_posterior:
+            def fitness(ind: Individual) -> float:
+                y, _std = model.predict(ind.sample)
+                return y
+        else:
+            def fitness(ind: Individual) -> float:
+                return ind.observation
+
+        return fitness
 
     async def _evaluate_all(
         self, individuals: t.List[Individual], *,
@@ -291,9 +330,14 @@ class _MinimizationInstance:
         self, *,
         parents: t.List[Individual],
         offspring: t.List[Individual],
+        model: SurrogateModel,
     ) -> t.List[Individual]:
+
+        fitness_operator = self._make_fitness_operator(
+            with_posterior=self.select_via_posterior, model=model)
+
         selected, rejected = select_next_population(
-            parents=parents, offspring=offspring)
+            parents=parents, offspring=offspring, fitness=fitness_operator)
 
         population = replace_worst_n_individuals(
             3, population=selected, replacement_pool=rejected)
@@ -302,7 +346,10 @@ class _MinimizationInstance:
 
 
 def select_next_population(
-    *, parents: t.List[Individual], offspring: t.List[Individual],
+    *,
+    parents: t.List[Individual],
+    offspring: t.List[Individual],
+    fitness: t.Callable[[Individual], float],
 ) -> t.Tuple[t.List[Individual], t.List[Individual]]:
     r"""
     Select the offspring, unless the corresponding parent was better.
@@ -320,7 +367,7 @@ def select_next_population(
         select = ind_offspring
         reject = ind_parent
 
-        if reject.observation < select.observation:
+        if fitness(reject) < fitness(select):
             select, reject = reject, select
 
         selected.append(select)
