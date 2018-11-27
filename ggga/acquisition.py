@@ -276,7 +276,17 @@ class RandomWalkAcquisition(AcquisitionStrategy):
 @attr.s
 class GradientAcquisition(AcquisitionStrategy):
     breadth: int = attr.ib()
+    breadth.validator(Validator.is_posint)  # type: ignore
+
     # jitter_factor: float = 1/20
+
+    @staticmethod
+    @yaml_constructor('!GradientAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'GradientAcquisition':
+        if node.id == 'scalar':
+            return GradientAcquisition(breadth=loader.construct_scalar(node))
+        else:
+            return GradientAcquisition(**loader.construct_mapping(node))
 
     def acquire(
         self, population: IterableIndividuals, *,

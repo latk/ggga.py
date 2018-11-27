@@ -11,11 +11,7 @@ from .gpr import SurrogateModelGPR
 from .util import fork_random_state, timer
 from .surrogate_model import SurrogateModel
 from .space import Space
-from .acquisition import (
-        AcquisitionStrategy,
-        ChainedAcquisition,
-        RandomWalkAcquisition,
-        RandomReplacementAcquisition)
+from .acquisition import AcquisitionStrategy, RandomWalkAcquisition
 from .individual import Individual
 from .outputs import Output, OutputEventHandler
 
@@ -154,13 +150,10 @@ class Minimizer:
         return await instance.run(rng=rng)
 
     def _make_default_acquisition_strategy(self) -> AcquisitionStrategy:
-        return ChainedAcquisition(
-            RandomWalkAcquisition(
-                breadth=3,
-                candidate_chain_length=1,
-                relscale_attenuation=self.relscale_attenuation,
-            ),
-            RandomReplacementAcquisition(n_replacements=self.popsize),
+        return RandomWalkAcquisition(
+            breadth=10,
+            candidate_chain_length=1,
+            relscale_attenuation=self.relscale_attenuation,
         )
 
 
