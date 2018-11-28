@@ -77,6 +77,7 @@ class Minimizer:
     time_source : TimeSource
     select_via_posterior: bool
     fmin_via_posterior: bool
+    n_replacements: int
     """
 
     popsize: int = 10
@@ -89,6 +90,7 @@ class Minimizer:
     time_source: TimeSource = time.time
     select_via_posterior: bool = False
     fmin_via_posterior: bool = True
+    n_replacements: int = 1
 
     def __attrs_post_init__(self)-> None:
         assert self.popsize < self.max_nevals
@@ -105,6 +107,7 @@ class Minimizer:
         time_source: TimeSource = None,
         select_via_posterior: bool = None,
         fmin_via_posterior: bool = None,
+        n_replacements: int = None,
     ) -> 'Minimizer':
 
         TValue = t.TypeVar('TValue')
@@ -131,6 +134,7 @@ class Minimizer:
                 select_via_posterior, self.select_via_posterior),
             fmin_via_posterior=default(
                 fmin_via_posterior, self.fmin_via_posterior),
+            n_replacements=default(n_replacements, self.n_replacements)
         )
 
     async def minimize(
@@ -155,8 +159,6 @@ class Minimizer:
             space=space,
             outputs=outputs,
             acquisition_strategy=acquisition_strategy,
-            select_via_posterior=self.select_via_posterior,
-            fmin_via_posterior=self.fmin_via_posterior,
         )
 
         return await instance.run(rng=rng)
@@ -176,8 +178,6 @@ class _MinimizationInstance:
     space: Space = attr.ib()
     outputs: OutputEventHandler = attr.ib()
     acquisition_strategy: AcquisitionStrategy = attr.ib()
-    select_via_posterior: bool = attr.ib()
-    fmin_via_posterior: bool = attr.ib()
 
     async def run(self, *, rng: RandomState) -> OptimizationResult:
         config: Minimizer = self.config
@@ -204,7 +204,7 @@ class _MinimizationInstance:
             individuals: t.Iterable[Individual], *, model: SurrogateModel,
         ) -> float:
             fmin_operator = self._make_fitness_operator(
-                with_posterior=self.fmin_via_posterior,
+                with_posterior=self.config.fmin_via_posterior,
                 model=model)
             return min(fmin_operator(ind) for ind in individuals)
 
@@ -334,13 +334,15 @@ class _MinimizationInstance:
     ) -> t.List[Individual]:
 
         fitness_operator = self._make_fitness_operator(
-            with_posterior=self.select_via_posterior, model=model)
+            with_posterior=self.config.select_via_posterior, model=model)
 
         selected, rejected = select_next_population(
             parents=parents, offspring=offspring, fitness=fitness_operator)
 
         population = replace_worst_n_individuals(
-            3, population=selected, replacement_pool=rejected)
+            self.config.n_replacements,
+            population=selected,
+            replacement_pool=rejected)
 
         return population
 
