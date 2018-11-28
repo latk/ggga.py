@@ -1,0 +1,7 @@
+flake8
+mypy
+pylint
+pylint-exit
+pytest
+pytest-describe
+scikit-optimize>=0.5
