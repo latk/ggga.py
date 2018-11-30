@@ -37,3 +37,7 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) sphere2 --samples 80
 	time $(GGGA_EXAMPLE) sphere2 --samples 80 --noise 1.5
 	time $(GGGA_EXAMPLE) onemax4log --samples 80
+
+README_example.png: SHELL = bash
+README_example.png: README.md
+	$(PYTHON) <(awk '/^```/ {if (found){nextfile}; found=!found; next} found {print}' $<)
