@@ -142,12 +142,10 @@ Run the example from the Synopsis:
 
    $ python3 -m ggga.examples goldstein-price --logy --samples=50 --noise 10
 
-.. _ggga.Minimizer:
+Minimizer
+---------
 
-class ggga.Minimizer
---------------------
-
-.. _Minimizer: ggga.Minimizer_
+*class ggga.Minimizer*
 
 Configure the GGGA optimizer.
 
@@ -180,7 +178,7 @@ Attributes:
    How many random samples are suggested per generation.
    Usually, new samples are created by random mutations of existing samples.
 
-**with_setting**\ (**kwargs) -> Minimizer:
+**with_setting**\ (\**kwargs) -> Minimizer:
 
 Clone a minimizer but override some attributes.
 
@@ -201,12 +199,10 @@ Minimize the objective.
    Can e.g. be used to save evaluations in a CSV file.
    Defaults to `Output`_.
 
-.. _ggga.OptimizationResult:
+OptimizationResult
+------------------
 
-class ggga.OptimizationResult
------------------------------
-
-.. _OptimizationResult: ggga.OptimizationResult_
+*class ggga.OptimizationResult*
 
 **best_individual**: `Individual`_
 
@@ -220,12 +216,10 @@ class ggga.OptimizationResult
 
 **fmin**: float
 
-.. _ggga.Individual:
+Individual
+----------
 
-class ggga.Individual
----------------------
-
-.. _Individual: ggga.Individual_
+*class ggga.Individual*
 
 **sample**: list
 
@@ -241,18 +235,17 @@ class ggga.Individual
 
 **is_fully_initialized**\ () -> bool
 
-.. _ggga.Space:
+Space
+-----
 
-class ggga.Space
-----------------
-
-.. _Space: ggga.Space_
 .. _Integer: Space_
 .. _Real: Space_
 
+*class ggga.Space*
+
 Represents the parameter space inside which optimization is performed.
 
-**Space**\ (*params):
+**Space**\ (\*params):
 
 -  *params*. The parameters that make up the space.
 
@@ -261,12 +254,10 @@ Parameters:
 -  class **Integer**\ (name, lo, hi)
 -  class **Real**\ (name, lo, hi, \*, scale?)
 
-.. _ggga.SurrogateModel:
+SurrogateModel
+--------------
 
-interface ggga.SurrogateModel
------------------------------
-
-.. _SurrogateModel: ggga.SurrogateModel_
+*interface ggga.SurrogateModel*
 
 A regression model to predict the value of points.
 This is used to guide the acquisition of new samples.
@@ -293,12 +284,10 @@ abstract **predict_transformed_a**\ (mat_x_transformed, \*, return_std?) -> (vec
 
 **length_scales**\ () -> ndarray
 
-.. _ggga.acquisition.AcquisitionStrategy:
+AcquisitionStrategy
+-------------------
 
-interface ggga.acquisition.AcquisitionStrategy
-----------------------------------------------
-
-.. _AcquisitionStrategy: ggga.acquisition.AcquisitionStrategy_
+*interface ggga.acquisition.AcquisitionStrategy*
 
 A strategy to acquire new samples.
 
@@ -318,12 +307,10 @@ abstract **acquire**\ (population, \*, model, relscale, rng, fmin, space) -> Ite
 -  class **GradientAcquisition**\ (breadth):
    Use gradient optimization to find optimal samples.
 
-.. _ggga.OutputEventHandler:
+OutputEventHandler
+------------------
 
-interface ggga.OutputEventHandler
----------------------------------
-
-.. _OutputEventHandler: ggga.OutputEventHandler_
+*interface ggga.OutputEventHandler*
 
 Report progress and save results during optimization progress,
 
@@ -335,14 +322,12 @@ Report progress and save results during optimization progress,
 
 **event_acquisition_completed**\ (\*, duration)
 
-.. _ggga.Output:
+Output
+------
 
-class ggga.Output
------------------
+*class ggga.Output*
 
-.. _Output: ggga.Output_
-
-Default `OutputEventHandler`_.
+Default implementation of `OutputEventHandler`_.
 
 **Output**\ (\*, space, evaluation_csv_file?, model_file?, log_file?):
 
@@ -364,16 +349,14 @@ Default `OutputEventHandler`_.
 
 Add another `OutputEventHandler`_.
 
-.. _ggga.visualization.PartialDependence:
+PartialDependence
+-----------------
 
-class ggga.visualization.PartialDependence
-------------------------------------------
-
-.. _PartialDependence: ggga.visualization.PartialDependence_
+*class ggga.visualization.PartialDependence*
 
 Make visualizations that analyze individual contributions of each parameter.
 
-**PartialDependence**\ (*, model, space, rng, resolution, quality):
+**PartialDependence**\ (\*, model, space, rng, resolution, quality):
 
 -  **model**: `SurrogateModel`_.
 -  **space**: `Space`_.
@@ -409,10 +392,10 @@ Plot a visualization of parameter influences.
 
 Returns: (*fig*, *axes*): The plotted figure.
 
-.. _ggga.benchmark_functions:
+benchmark_functions
+-------------------
 
-module ggga.benchmark_functions
--------------------------------
+*module ggga.benchmark_functions*
 
 A collection of optimization benchmark functions
 that can be used via the example runner.
@@ -426,7 +409,7 @@ Read their docstrings for more information on behaviour, bounds, and optima.
 
 **himmelblau**\ (x_1, x_2)
 
-**rastrigin**\ (*xs, \*, amplitude?)
+**rastrigin**\ (\*xs, amplitude?)
 
 **rosenbrock**\ (\*xs)
 
