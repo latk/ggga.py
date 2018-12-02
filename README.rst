@@ -142,8 +142,12 @@ Run the example from the Synopsis:
 
    $ python3 -m ggga.examples goldstein-price --logy --samples=50 --noise 10
 
+.. _ggga.Minimizer:
+
 class ggga.Minimizer
 --------------------
+
+.. _Minimizer: ggga.Minimizer_
 
 Configure the GGGA optimizer.
 
@@ -158,11 +162,11 @@ Attributes:
    as percentage of each parameter's range.
 -  **relscale_attenuation**: float = 0.9.
    Factor by which the relscale is reduced per generation.
--  **surrogate_model_class**: Type[SurrogateModel] = ggga.SurrogateModelGPR.
+-  **surrogate_model_class**: Type[`SurrogateModel`_] = ggga.SurrogateModelGPR.
    The regression model to fit the response surface.
 -  **surrogate_model_args**: dict = {}.
    Extra arguments for the surrogate model.
--  **acquisition_strategy**: Optional[AcquisitionStrategy].
+-  **acquisition_strategy**: Optional[`AcquisitionStrategy`_].
    How new samples are acquired.
 -  **select_via_posterior**: bool = False.
    Whether the model prediction should be used as a fitness function
@@ -181,7 +185,7 @@ Attributes:
 Clone a minimizer but override some attributes.
 
 async **minimize**\ (objective, \*, space, rng, outputs?) ->
-OptimizationResult:
+`OptimizationResult`_:
 
 Minimize the objective.
 
@@ -189,21 +193,26 @@ Minimize the objective.
    A function to calculate the objective value.
    The *sample* is a list with the same order as the params in the space.
    The *value* and *cost* are floats. The cost is merely informative.
--  **space**: Space.
+-  **space**: `Space`_.
    The parameter space inside which the objective is optimized.
 -  **rng**: numpy.random.RandomState.
--  **outputs**: OutputEventHandler = <unspecified>.
+-  **outputs**: `OutputEventHandler`_ = <...>.
    Controls what information is printed during optimization.
    Can e.g. be used to save evaluations in a CSV file.
+   Defaults to `Output`_.
+
+.. _ggga.OptimizationResult:
 
 class ggga.OptimizationResult
 -----------------------------
 
-**best_individual**: Individual
+.. _OptimizationResult: ggga.OptimizationResult_
 
-**best_n**\ (how_many: int) -> List[Individual]
+**best_individual**: `Individual`_
 
-**model**: SurrogateModel
+**best_n**\ (how_many: int) -> List[`Individual`_]
+
+**model**: `SurrogateModel`_
 
 **xs**: ndarray
 
@@ -211,8 +220,12 @@ class ggga.OptimizationResult
 
 **fmin**: float
 
+.. _ggga.Individual:
+
 class ggga.Individual
 ---------------------
+
+.. _Individual: ggga.Individual_
 
 **sample**: list
 
@@ -228,8 +241,14 @@ class ggga.Individual
 
 **is_fully_initialized**\ () -> bool
 
+.. _ggga.Space:
+
 class ggga.Space
 ----------------
+
+.. _Space: ggga.Space_
+.. _Integer: Space_
+.. _Real: Space_
 
 Represents the parameter space inside which optimization is performed.
 
@@ -242,8 +261,12 @@ Parameters:
 -  class **Integer**\ (name, lo, hi)
 -  class **Real**\ (name, lo, hi, \*, scale?)
 
+.. _ggga.SurrogateModel:
+
 interface ggga.SurrogateModel
 -----------------------------
+
+.. _SurrogateModel: ggga.SurrogateModel_
 
 A regression model to predict the value of points.
 This is used to guide the acquisition of new samples.
@@ -257,7 +280,7 @@ Fit a new model to the given data.
 
 -  **mat_x**: ndarray.
 -  **vec_y**: ndarray.
--  **space**: Space.
+-  **space**: `Space`_.
 -  **rng**: RandomState.
 -  **prior**: Optional[SurrogateModel].
 -  **\**kwargs**. Extra arguments for the concrete SurrogateModel class.
@@ -270,8 +293,12 @@ abstract **predict_transformed_a**\ (mat_x_transformed, \*, return_std?) -> (vec
 
 **length_scales**\ () -> ndarray
 
+.. _ggga.acquisition.AcquisitionStrategy:
+
 interface ggga.acquisition.AcquisitionStrategy
 ----------------------------------------------
+
+.. _AcquisitionStrategy: ggga.acquisition.AcquisitionStrategy_
 
 A strategy to acquire new samples.
 
@@ -291,15 +318,65 @@ abstract **acquire**\ (population, \*, model, relscale, rng, fmin, space) -> Ite
 -  class **GradientAcquisition**\ (breadth):
    Use gradient optimization to find optimal samples.
 
+.. _ggga.OutputEventHandler:
+
+interface ggga.OutputEventHandler
+---------------------------------
+
+.. _OutputEventHandler: ggga.OutputEventHandler_
+
+Report progress and save results during optimization progress,
+
+**event_new_generation**\ (gen, \*, relscale)
+
+**event_evaluations_completed**\ (individuals, \* duration)
+
+**event_model_trained**\ (generation, model, \* duration)
+
+**event_acquisition_completed**\ (\*, duration)
+
+.. _ggga.Output:
+
+class ggga.Output
+-----------------
+
+.. _Output: ggga.Output_
+
+Default `OutputEventHandler`_.
+
+**Output**\ (\*, space, evaluation_csv_file?, model_file?, log_file?):
+
+-  *space*: `Space`_.
+-  *evaluation_csv_file*: Optional[TextIO] = None.
+   If provided, will write evaluation results to a CSV file.
+-  *model_file*: Optional[TextIO] = None.
+   If provided, will write trained models as JSON documents to that file.
+-  *log_file*: Optional[TextIO] = stdout:
+   If provided, will write human readable output to that file.
+
+**acquisition_durations**: List[float]
+
+**evaluation_durations**: List[float]
+
+**training_durations**: List[float]
+
+**add**\ (logger):
+
+Add another `OutputEventHandler`_.
+
+.. _ggga.visualization.PartialDependence:
+
 class ggga.visualization.PartialDependence
 ------------------------------------------
+
+.. _PartialDependence: ggga.visualization.PartialDependence_
 
 Make visualizations that analyze individual contributions of each parameter.
 
 **PartialDependence**\ (*, model, space, rng, resolution, quality):
 
--  **model**: SurrogateModel.
--  **space**: Space.
+-  **model**: `SurrogateModel`_.
+-  **space**: `Space`_.
 -  **rng**: RandomState.
 -  **resolution**: int = 40.
    How many samples are used along one
@@ -331,6 +408,8 @@ Plot a visualization of parameter influences.
    The *dim_2_name* is only provided for interaction plots.
 
 Returns: (*fig*, *axes*): The plotted figure.
+
+.. _ggga.benchmark_functions:
 
 module ggga.benchmark_functions
 -------------------------------
@@ -370,7 +449,8 @@ e.g. ``!GGGA { ... }``.
 -  ``ggga``: use GGGA for optimization.
 
 -  ``!GGGA { ... }``: use GGGA for optimization.
-   The mapping may provide extra arguments for the Minimizer.
+   The mapping may provide extra arguments for the
+   `Minimizer`_.
    The Minimizer's *nevals* and *surrogate_model_class* arguments
    should be specified via the example runner's --samples and --model flags.
    All acquisition strategies can be specified through YAML.
