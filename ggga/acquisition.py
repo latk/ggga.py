@@ -205,14 +205,52 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
 
 
 @attr.s
+class MutationAcquisition(AcquisitionStrategy):
+    breadth: int = attr.ib()
+    breadth.validator(Validator.is_posint)  # type: ignore
+
+    @staticmethod
+    @yaml_constructor('!MutationAcquisition', safe=True)
+    def from_yaml(loader, node) -> 'MutationAcquisition':
+        return MutationAcquisition(**loader.construct_mapping(node))
+
+    def acquire(
+        self, population: IterableIndividuals, *,
+        model: SurrogateModel,
+        relscale: np.ndarray,
+        rng: RandomState,
+        fmin: float,
+        space: Space,
+    ):
+        for parent in population:
+            parent_sample_transformed = space.into_transformed(parent.sample)
+
+            candidate_samples = [
+                space.mutate_transformed(
+                    parent_sample_transformed, relscale=relscale, rng=rng)
+                for _ in range(self.breadth)]
+
+            candidate_mean, candidate_std = model.predict_transformed_a(
+                candidate_samples)
+            candidate_ei = expected_improvement(
+                candidate_mean, candidate_std, fmin)
+
+            i = np.argmax(candidate_ei)
+            yield Individual(
+                space.from_transformed(candidate_samples[i]),
+                prediction=candidate_mean[i],
+                expected_improvement=candidate_ei[i])
+
+
+@attr.s
 class RandomWalkAcquisition(AcquisitionStrategy):
     breadth: int = attr.ib()
     breadth.validator(Validator.is_posint)  # type: ignore
 
-    candidate_chain_length: int = attr.ib()
-    candidate_chain_length.validator(Validator.is_posint)  # type: ignore
+    steps: int = attr.ib()
+    steps.validator(Validator.is_posint)  # type: ignore
 
-    relscale_attenuation: float = attr.ib()
+    relscale_attenuation: float = attr.ib(default=0.5)
     relscale_attenuation.validator(Validator.is_percentage)  # type: ignore
 
     @staticmethod
@@ -228,49 +266,22 @@ class RandomWalkAcquisition(AcquisitionStrategy):
         fmin: float,
         space: Space,
     ):
+        subacq = MutationAcquisition(breadth=self.breadth)
+
         offspring = population
 
-        assert self.candidate_chain_length > 0
-        for i in range(self.candidate_chain_length):
-            offspring = [
-                self._one_step(
-                    parent,
-                    relscale=relscale * (self.relscale_attenuation ** i),
-                    fmin=fmin,
-                    rng=rng,
-                    model=model,
-                    space=space,
-                )
-                for parent in offspring
-            ]
+        assert self.steps > 0
+        for i in range(self.steps):
+            offspring = list(subacq.acquire(
+                offspring,
+                relscale=relscale * (self.relscale_attenuation ** i),
+                fmin=fmin,
+                rng=rng,
+                model=model,
+                space=space,
+            ))
 
         return offspring
-
-    def _one_step(
-        self, parent: Individual, *,
-        relscale: np.ndarray,
-        fmin: float,
-        rng: RandomState,
-        model: SurrogateModel,
-        space: Space,
-    ) -> Individual:
-        parent_sample_transformed = space.into_transformed(parent.sample)
-
-        candidate_samples = [
-            space.mutate_transformed(
-                parent_sample_transformed, relscale=relscale, rng=rng)
-            for _ in range(self.breadth)]
-
-        candidate_mean, candidate_std = model.predict_transformed_a(
-            candidate_samples)
-        candidate_ei = expected_improvement(
-            candidate_mean, candidate_std, fmin)
-
-        i = np.argmax(candidate_ei)
-        return Individual(
-            space.from_transformed(candidate_samples[i]),
-            prediction=candidate_mean[i],
-            expected_improvement=candidate_ei[i])
 
 
 @attr.s

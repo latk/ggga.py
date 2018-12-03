@@ -166,6 +166,7 @@ Attributes:
    Extra arguments for the surrogate model.
 -  **acquisition_strategy**: Optional[`AcquisitionStrategy`_].
    How new samples are acquired.
+   Defaults to MutationAcquisition(breadth=10).
 -  **select_via_posterior**: bool = False.
    Whether the model prediction should be used as a fitness function
    when selecting which samples proceed to the next generation.
@@ -302,7 +303,8 @@ abstract **acquire**\ (population, \*, model, relscale, rng, fmin, space) -> Ite
    Randomly assign parent individuals to a sub-strategy.
 -  class **RandomReplacementAcquisition**\ (\*, n_replacements, subacquisition, hedge_via_prediction?, relscale_initial?):
    Replace bad samples with random samples.
--  class **RandomWalkAcquisition**\ (breadth, candidate_chain_length, relscale_attenuation):
+-  class **MutationAcquisition**\ (breadth)
+-  class **RandomWalkAcquisition**\ (breadth, steps, relscale_attenuation?):
    Randomly mutate parent samples to create new samples in their neighborhood.
 -  class **GradientAcquisition**\ (breadth):
    Use gradient optimization to find optimal samples.

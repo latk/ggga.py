@@ -11,7 +11,7 @@ from .gpr import SurrogateModelGPR
 from .util import fork_random_state, timer
 from .surrogate_model import SurrogateModel
 from .space import Space
-from .acquisition import AcquisitionStrategy, RandomWalkAcquisition
+from .acquisition import AcquisitionStrategy, MutationAcquisition
 from .individual import Individual
 from .outputs import Output, OutputEventHandler
 
@@ -146,7 +146,7 @@ class Minimizer:
 
         acquisition_strategy = self.acquisition_strategy
         if acquisition_strategy is None:
-            acquisition_strategy = self._make_default_acquisition_strategy()
+            acquisition_strategy = MutationAcquisition(breadth=10)
         assert acquisition_strategy is not None
 
         if outputs is None:
@@ -162,13 +162,6 @@ class Minimizer:
         )
 
         return await instance.run(rng=rng)
-
-    def _make_default_acquisition_strategy(self) -> AcquisitionStrategy:
-        return RandomWalkAcquisition(
-            breadth=10,
-            candidate_chain_length=1,
-            relscale_attenuation=self.relscale_attenuation,
-        )
 
 
 @attr.s(frozen=True, cmp=False, auto_attribs=True)
