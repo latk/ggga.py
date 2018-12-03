@@ -7,7 +7,7 @@ FLAKE8 = $(PYTHON) -m flake8
 MYPY   = $(PYTHON) -m mypy
 PYLINT = $(PYTHON) -m pylint
 PIP    = $(PYTHON) -m pip
-GGGA_EXAMPLE = $(PYTHON) -m ggga.examples
+GGGA_EXAMPLE = $(PYTHON) -m ggga
 
 all:
 	# nothing

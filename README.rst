@@ -128,19 +128,19 @@ Alternatively, build the container from the Dockerfile.
 Examples
 --------
 
-The ``ggga.examples`` is a command line tool
+The ``ggga`` module is also a command line tool
 to explore various benchmark functions.
 By default, GGGA is compared to random samples.
 
 ::
 
-   $ python3 -m ggga.examples --help
+   $ python3 -m ggga --help
 
 Run the example from the Synopsis:
 
 ::
 
-   $ python3 -m ggga.examples goldstein-price --logy --samples=50 --noise 10
+   $ python3 -m ggga goldstein-price --logy --samples=50 --noise 10
 
 Minimizer
 ---------
