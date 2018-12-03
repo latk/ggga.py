@@ -17,7 +17,10 @@ class Example:
     minima: t.List[t.Tuple[list, float]] = attr.ib()
 
     def make_objective(
-        self, *, log_y: bool, noise_level: float,
+        self, *,
+        log_y: bool,
+        noise_level: float,
+        on_evaluation: t.Callable[[list, float], None] = None,
     ) -> ObjectiveFunction:
 
         async def objective(xs, rng):
@@ -28,6 +31,9 @@ class Example:
                 while y + noise < 0:
                     noise = noise_level * rng.standard_normal()
                 y += noise
+
+            if on_evaluation is not None:
+                on_evaluation(xs, y)
 
             if log_y:
                 assert y > 0, f"ys must be positive, was {y}"

@@ -29,12 +29,24 @@ class IndividualsToTable:
 
     @staticmethod
     def individual_to_row(ind: Individual) -> t.Iterable:
-        yield ind.gen
-        yield ind.observation
-        yield ind.prediction
-        yield ind.expected_improvement
-        yield ind.cost
-        yield from ind.sample
+        return IndividualsToTable.observation_to_row(
+            gen=ind.gen, observation=ind.observation,
+            prediction=ind.prediction,
+            expected_improvement=ind.expected_improvement,
+            cost=ind.cost, sample=ind.sample,
+        )
+
+    @staticmethod
+    def observation_to_row(
+        *, sample: list, observation: float, prediction: float,
+        expected_improvement: float, cost: float, gen: int,
+    ) -> t.Iterable:
+        yield gen
+        yield observation
+        yield prediction
+        yield expected_improvement
+        yield cost
+        yield from sample
 
 
 class OutputEventHandler:
@@ -176,13 +188,38 @@ class RecordCompletedEvaluations(OutputEventHandler):
         self._csv_writer.writerow(individuals_table.columns)
         self._individuals_table = individuals_table
 
+    @classmethod
+    def new(
+        cls, csv_file: t.TextIO, *, space: Space,
+    ) -> 'RecordCompletedEvaluations':
+        return cls(csv_file, individuals_table=IndividualsToTable(space))
+
+    def write_result(
+        self, *,
+        sample: list,
+        observation: float,
+        gen: int = 0,
+        expected_improvement: float = 0.0,
+        prediction: float = 0.0,
+        cost: float = 0.0,
+    ) -> None:
+        self._csv_writer.writerow(
+            self._individuals_table.observation_to_row(
+                sample=sample, observation=observation, gen=gen,
+                expected_improvement=expected_improvement,
+                prediction=prediction, cost=cost,
+            ))
+
+    def write_individual(self, ind: Individual):
+        self._csv_writer.writerow(
+            self._individuals_table.individual_to_row(ind))
+
     def event_evaluations_completed(
         self, individuals: t.Iterable[Individual], *,
         duration: float,  # pylint: disable=unused-argument
     ) -> None:
         for ind in individuals:
-            self._csv_writer.writerow(
-                self._individuals_table.individual_to_row(ind))
+            self.write_individual(ind)
 
 
 class Output(CompositeOutputEventHandler):
@@ -257,4 +294,5 @@ class Output(CompositeOutputEventHandler):
 __all__ = [
     Output.__name__,
     OutputEventHandler.__name__,
+    RecordCompletedEvaluations.__name__,
 ]

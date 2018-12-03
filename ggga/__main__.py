@@ -11,6 +11,7 @@ from . import RandomState
 from . import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
 from .visualization import PartialDependence
 from .util import yaml_constructor
+from .outputs import RecordCompletedEvaluations
 from .examples import (
     Example, EXAMPLES,
     Strategy, StrategyConfiguration,
@@ -38,7 +39,19 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     log_y: bool,
     noise_level: float,
 ) -> t.List[plt.Figure]:
-    objective = example.make_objective(log_y=log_y, noise_level=noise_level)
+
+    if cfg.csv_file:
+        csv_writer = RecordCompletedEvaluations.new(
+            cfg.csv_file, space=cfg.space)
+
+        def on_evaluation(sample, value):
+            csv_writer.write_result(sample=sample, observation=value)
+    else:
+        def on_evaluation(sample, value):  # pylint: disable=unused-argument
+            pass
+
+    objective = example.make_objective(
+        log_y=log_y, noise_level=noise_level, on_evaluation=on_evaluation)
 
     figs = []
     for strategy in strategies:
@@ -161,6 +174,11 @@ def make_argument_parser() -> argparse.ArgumentParser:
         help="Which optimization strategies will be used. "
              "Can be 'random', 'ggga', "
              "or a YAML document describing the strategy.")
+    parser.add_argument(
+        '--csv', metavar='FILE', type=argparse.FileType('w'),
+        dest='csv',
+        help="Write evaluations results to a CSV file. "
+             "Only use this when running a single strategy.")
 
     return parser
 
@@ -182,11 +200,15 @@ def main() -> None:
 
     example = EXAMPLES[options.example]
 
+    if options.csv and len(strategies) > 1:
+        raise ValueError("--csv can only be used with a single strategy")
+
     strategy_cfg = StrategyConfiguration(
         space=example.space,
         n_samples=options.samples,
         surrogate_model_class=surrogate_model_class,
         quiet=options.quiet,
+        csv_file=options.csv,
     )
 
     loop = asyncio.get_event_loop()

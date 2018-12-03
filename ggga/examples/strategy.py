@@ -16,6 +16,7 @@ class StrategyConfiguration:
     n_samples: int = attr.ib()
     surrogate_model_class: t.Type[SurrogateModel] = attr.ib()
     quiet: bool = attr.ib()
+    csv_file: t.Optional[t.TextIO] = attr.ib()
 
 
 class Strategy(abc.ABC):
