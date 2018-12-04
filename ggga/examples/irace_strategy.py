@@ -102,9 +102,12 @@ class IraceStrategy(Strategy):
                   .replace('___CONFIDENCE___', str(self.confidence))
                   .replace('___PARAMS___', '\n'.join(irace_params)))
 
+        stdout = None
+        if cfg.quiet:
+            stdout = asyncio.subprocess.DEVNULL
         irace = await asyncio.create_subprocess_exec(
             'R', '--no-save',
-            stdin=asyncio.subprocess.PIPE, stdout=None, stderr=None)
+            stdin=asyncio.subprocess.PIPE, stdout=stdout, stderr=None)
 
         irace_stdin = irace.stdin
         assert irace_stdin is not None
