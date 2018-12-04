@@ -38,6 +38,7 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     rng_seed: int,
     log_y: bool,
     noise_level: float,
+    render_plots: bool,
 ) -> t.List[plt.Figure]:
 
     if cfg.csv_file:
@@ -68,6 +69,9 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
             n_samples=cfg.n_samples,
             sample_type=strategy.name,
         )
+
+        if not render_plots:
+            continue
 
         fig, _ = PartialDependence(model=model, space=example.space, rng=rng) \
             .plot_grid(xs, ys)
@@ -219,6 +223,7 @@ def main() -> None:
         rng_seed=options.seed,
         log_y=options.log_y,
         noise_level=options.noise,
+        render_plots=options.interactive,
     ))
 
     if options.interactive:
