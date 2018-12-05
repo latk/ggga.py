@@ -7,7 +7,7 @@ from .gpr import SurrogateModelGPR
 from .knn import SurrogateModelKNN
 from .hierarchical import SurrogateModelHierarchical
 from .util import tabularize
-from .minimize import Minimizer, ObjectiveFunction
+from .minimize import Minimizer, ObjectiveFunction, OptimizationResult
 from .outputs import Output, OutputEventHandler
 
 __all__ = [
@@ -16,6 +16,6 @@ __all__ = [
     'SurrogateModel',
     'SurrogateModelGPR', 'SurrogateModelKNN', 'SurrogateModelHierarchical',
     'tabularize',
-    'Minimizer', 'ObjectiveFunction',
+    'Minimizer', 'ObjectiveFunction', 'OptimizationResult',
     'Output', 'OutputEventHandler',
 ]

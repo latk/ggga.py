@@ -16,7 +16,7 @@ def _default_progress_cb(_param_1: str, _param_2: t.Optional[str]) -> None:
     pass
 
 
-@attr.s(frozen=True)
+@attr.s(frozen=True, auto_attribs=True)
 class DualDependenceStyle:
     cmap: str = 'viridis_r'
     contour_args: t.Optional[dict] = None
@@ -200,6 +200,12 @@ def plot_single_variable_dependence(
     partial_dependence: PartialDependence,
     scatter_args=dict(c='g', s=10, lw=0, alpha=0.5),
     minline_args=dict(linestyle='--', color='r', lw=1),
+    show_mean: bool = True, show_mean_err: bool = True,
+    show_min: bool = True, show_min_err: bool = True,
+    cmean: str = 'b',
+    cmin: str = 'r',
+    mean_args: dict = dict(),
+    min_args: dict = dict(),
 ) -> None:
 
     xs, ys_mean, ys_min, ys_mean_std, ys_min_std = \
@@ -207,18 +213,22 @@ def plot_single_variable_dependence(
 
     ax.scatter([x[dim] for x in x_observed], y_observed, **scatter_args)
 
-    ax.fill_between(
-        xs,
-        ys_mean - 2*ys_mean_std,
-        ys_mean + 2*ys_mean_std,
-        color='b', alpha=0.15)
-    ax.fill_between(
-        xs,
-        ys_min - 2*ys_min_std,
-        ys_min + 2*ys_min_std,
-        color='r', alpha=0.15)
-    ax.plot(xs, ys_mean, c='b')
-    ax.plot(xs, ys_min, c='r')
+    if show_mean and show_mean_err:
+        ax.fill_between(
+            xs,
+            ys_mean - 2*ys_mean_std,
+            ys_mean + 2*ys_mean_std,
+            color=cmean, alpha=0.15)
+    if show_min and show_min_err:
+        ax.fill_between(
+            xs,
+            ys_min - 2*ys_min_std,
+            ys_min + 2*ys_min_std,
+            color=cmin, alpha=0.15)
+    if show_mean:
+        ax.plot(xs, ys_mean, c=cmean, **mean_args)
+    if show_min:
+        ax.plot(xs, ys_min, c=cmin, **min_args)
 
     if x_observed_min is not None:
         ax.axvline(x_observed_min[dim], **minline_args)
@@ -253,11 +263,12 @@ def plot_dual_variable_dependence(
         [x[dim_2] for x in x_observed],
         **style.get_scatter_args(),
     )
-    ax.scatter(
-        x_observed_min[dim_1],
-        x_observed_min[dim_2],
-        **style.get_xmin_scatter_args(),
-    )
+    if x_observed_min is not None:
+        ax.scatter(
+            x_observed_min[dim_1],
+            x_observed_min[dim_2],
+            **style.get_xmin_scatter_args(),
+        )
 
     bounds_1 = partial_dependence.space.params[dim_1].bounds()
     bounds_2 = partial_dependence.space.params[dim_2].bounds()
