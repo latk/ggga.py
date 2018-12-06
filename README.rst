@@ -459,9 +459,21 @@ Stability Policy
 
 The API is unstable and may change at any time without prior notice.
 
+Acknowledgements
+----------------
+
+Development of this software was supported by the
+Workgroup for Network Security, Information, and Data Security
+at the Frankfurt University of Applied Sciences
+(GH: `@fg-netzwerksicherheit <https://github.com/fg-netzwerksicherheit>`__,
+Homepage: `Forschungsgruppe für
+Netzwerksicherheit, Informationssicherheit und Datenschutz
+<http://netzwerksicherheit.fb2.fh-frankfurt.de/>`__)
+
 License
 -------
 
 Copyright 2018 Lukas Atkinson
 
-TODO license
+GGGA is licensed under the terms of the AGPLv3+,
+see the LICENSE.txt for details.
