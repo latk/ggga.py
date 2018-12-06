@@ -9,7 +9,7 @@ import yaml
 
 from . import RandomState
 from . import SurrogateModel, SurrogateModelGPR, SurrogateModelKNN
-from .visualization import PartialDependence
+from .visualization import PartialDependence, DualDependenceStyle
 from .util import yaml_constructor
 from .outputs import RecordCompletedEvaluations
 from .examples import (
@@ -20,13 +20,13 @@ from .examples import (
 
 
 @yaml_constructor('!Irace', safe=True)
-def irace_from_yaml(loader, node) -> 'IraceStrategy':
+def irace_from_yaml(loader, node) -> IraceStrategy:
     args = loader.construct_mapping(node)
     return IraceStrategy(**args)
 
 
 @yaml_constructor('!GGGA', safe=True)
-def ggga_from_yaml(loader, node) -> 'GGGAStrategy':
+def ggga_from_yaml(loader, node) -> GGGAStrategy:
     args = loader.construct_mapping(node)
     return GGGAStrategy(minimizer_args=args)
 
@@ -39,6 +39,7 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     log_y: bool,
     noise_level: float,
     render_plots: bool,
+    style: DualDependenceStyle = None,
 ) -> t.List[plt.Figure]:
 
     if cfg.csv_file:
@@ -50,6 +51,9 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
     else:
         def on_evaluation(sample, value):  # pylint: disable=unused-argument
             pass
+
+    if style is None:
+        style = DualDependenceStyle()
 
     objective = example.make_objective(
         log_y=log_y, noise_level=noise_level, on_evaluation=on_evaluation)
@@ -74,7 +78,7 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
             continue
 
         fig, _ = PartialDependence(model=model, space=example.space, rng=rng) \
-            .plot_grid(xs, ys)
+            .plot_grid(xs, ys, style=style)
         figtitle = example_name.title()
         fig.suptitle(f"{figtitle} ({cfg.n_samples} {strategy.name} samples)")
         figs.append(fig)
@@ -183,6 +187,10 @@ def make_argument_parser() -> argparse.ArgumentParser:
         dest='csv',
         help="Write evaluations results to a CSV file. "
              "Only use this when running a single strategy.")
+    parser.add_argument(
+        '--style', metavar='STYLE',
+        dest='style',
+        help="DualDependenceStyle for the plots.")
 
     return parser
 
@@ -215,6 +223,10 @@ def main() -> None:
         csv_file=options.csv,
     )
 
+    style = None
+    if options.style is not None:
+        style = DualDependenceStyle(**yaml.safe_load(options.style))
+
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_example_with_strategies(
         options.example, example,
@@ -224,6 +236,7 @@ def main() -> None:
         log_y=options.log_y,
         noise_level=options.noise,
         render_plots=options.interactive,
+        style=style
     ))
 
     if options.interactive:
