@@ -31,4 +31,4 @@ RUN pip3 --no-cache-dir install -r ./requirements.txt -r ./requirements-dev.txt
 COPY . ./
 RUN pip3 --no-cache-dir install .
 
-ENTRYPOINT ["python3", "-m", "ggga.examples"]
+ENTRYPOINT ["python3", "-m", "ggga"]
