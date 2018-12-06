@@ -386,13 +386,78 @@ Plot a visualization of parameter influences.
 -  **y_observed**: ndarray.
 -  **x_min**: list = <...>.
    Minimum sample. Defaults to the sample that minimizes *y_observed*.
--  **style**: DualDependenceStyle = <unspecified>.
+-  **style**: `DualDependenceStyle`_ = <unspecified>.
 -  **progress_cb**\ (dim_1_name, dim_2_name?) -> None:
    Called prior to rendering each sub-plot
    with the names of the parameters in the sub-plot.
    The *dim_2_name* is only provided for interaction plots.
 
 Returns: (*fig*, *axes*): The plotted figure.
+
+DualDependenceStyle
+-------------------
+
+*class ggga.visualization.DualDependenceStyle*
+
+Control the appearance of the parameter interaction visualization.
+
+The interaction (contour) plot has four layers
+that can be configured separately:
+
+-  filled contour plot (**get_contour_filled_args()**)
+
+   1. locator: None, cmap: *cmap*, alpha: 0.8
+   2. *contour_args*
+   3. *contour_filled_args*
+
+-  contour lines (**get_contour_line_args()**)
+
+   1. locator: None, colors: 'k', linewidths: 1
+   2. *contour_args*
+   3. *contour_filled_args*
+
+-  scatter plot of all samples (**get_scatter_args()**)
+
+   1. c: 'k', s: 10, lw: 0
+   2. *scatter_args*
+
+-  “scatter” plot of the best sample (**get_xmin_scatter_args()**)
+
+   1. *get_scatter_args()*
+   2. c: 'r'
+   3. *xmin_scatter_args*
+
+**cmap**: str = viridis_r.
+The colour map used for the filled contour plot
+
+**contour_args**: Optional[dict] = None.
+Extra arguments for the contour plot (both filled and lines).
+
+**contour_filled**: bool = True.
+Whether filled contours are drawn.
+Either this or *contour_lines* should be true.
+
+**contour_filled_args**: Optional[dict] = None.
+Extra arguments for the filled contour plot, overrides *contour_args*.
+
+**contour_levels**: int = 10.
+
+**contour_lines**: bool = False.
+Whether contour lines are drawn.
+Either this or *contour_filled* should be true.
+
+**contour_filled_args**: Optional[dict] = None.
+Extra arguments for the line contour plot, overrides *contour_args*.
+
+**contour_scatter_args**: Optional[dict] = None.
+Extra arguments for the scatter plot of all samples.
+
+**xmin_scatter_args**: Optional[dict] = None.
+Extra arguments to override the scatter plot appearance of the best point.
+
+**subplot_size**: float = 2.0.
+How large each plot in the grid of all parameters should be.
+The whole figure will have size (*n_params* × *subplot_size*)².
 
 benchmark_functions
 -------------------
