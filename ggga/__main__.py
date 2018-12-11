@@ -1,7 +1,7 @@
-import argparse
 import asyncio
 import typing as t
 
+import click
 import matplotlib.pyplot as plt  # type: ignore
 import numpy as np  # type: ignore
 import yaml
@@ -116,132 +116,121 @@ def compare_model_with_minima_io(
             f"expected {y_min_expected:.2f}")
 
 
-def load_strategy(spec: str) -> Strategy:
-    if spec.startswith('!'):
-        try:
-            strategy = yaml.safe_load(spec)
-        except Exception as ex:
-            raise argparse.ArgumentTypeError(
-                f"YAML did not parse successfully: {ex}")
-        if not isinstance(strategy, Strategy):
-            raise argparse.ArgumentTypeError(
-                f"YAML did not represent a strategy, "
-                f"but <{type(strategy).__name__}>: {strategy!r}")
-        return strategy
+class StrategyParam(click.ParamType):
+    name = 'strategy'
 
-    strategies: t.List[t.Type[Strategy]] = [GGGAStrategy, RandomStrategy]
-    for strategy_class in strategies:
-        if spec.casefold() == t.cast(str, strategy_class.name).casefold():
-            return strategy_class()
+    def convert(self, spec: str, param, ctx):
+        if spec.startswith('!'):
+            try:
+                strategy = yaml.safe_load(spec)
+            except Exception as ex:
+                self.fail(f"YAML did not parse successfully: {ex}", param, ctx)
+            if not isinstance(strategy, Strategy):
+                self.fail(
+                    f"YAML did not represent a strategy, "
+                    f"but <{type(strategy).__name__}>: {strategy!r}",
+                    param, ctx)
+            return strategy
 
-    raise argparse.ArgumentTypeError(f"Cannot find a strategy called {spec!r}")
+        strategies: t.List[t.Type[Strategy]] = [GGGAStrategy, RandomStrategy]
+        for strategy_class in strategies:
+            if spec.casefold() == t.cast(str, strategy_class.name).casefold():
+                return strategy_class()
 
-
-def make_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
-    parser.description = "Run an optimization benchmark function."
-
-    parser.add_argument(
-        'example', choices=sorted(EXAMPLES),
-        help="The example function to run.")
-    parser.add_argument(
-        '--no-interactive',
-        dest='interactive', action='store_false',
-        help="Do not display the generated plots.")
-    parser.add_argument(
-        '--samples', metavar='N', type=int,
-        dest='samples', default=50,
-        help="How many evaluations should be sampled. Default: %(default)s.")
-    parser.add_argument(
-        '--logy', action='store_true',
-        dest='log_y',
-        help="Log-transform the objective function.")
-    parser.add_argument(
-        '--noise', metavar='NOISE_LEVEL', type=float,
-        dest='noise', default=0.0,
-        help="Standard deviation of test function noise. "
-             "Default: %(default)s.")
-    parser.add_argument(
-        '--model', choices=('gpr', 'knn'),
-        dest='model', default='gpr',
-        help="The surrogate model implementation used for prediction. "
-             "gpr: Gaussian Process regression. "
-             "knn: k-Nearest Neighbor. "
-             "Default: %(default)s.")
-    parser.add_argument(
-        '--quiet', action='store_true',
-        dest='quiet',
-        help="Don't display human-readable output during minimization.")
-    parser.add_argument(
-        '--seed', metavar='SEED', type=int,
-        dest='seed', default=7861,
-        help="Seed for reproducible runs. Default: %(default)s.")
-    parser.add_argument(
-        '-s', '--strategy', metavar='STRATEGY', type=load_strategy,
-        dest='strategies', action='append',
-        help="Which optimization strategies will be used. "
-             "Can be 'random', 'ggga', "
-             "or a YAML document describing the strategy.")
-    parser.add_argument(
-        '--csv', metavar='FILE', type=argparse.FileType('w'),
-        dest='csv',
-        help="Write evaluations results to a CSV file. "
-             "Only use this when running a single strategy.")
-    parser.add_argument(
-        '--style', metavar='STYLE',
-        dest='style',
-        help="DualDependenceStyle for the plots.")
-
-    return parser
+        self.fail(f"Cannot find a strategy called {spec!r}", param, ctx)
 
 
-def main() -> None:
-    options = make_argument_parser().parse_args()
+@click.command()
+@click.argument(
+    'example_name', type=click.Choice(sorted(EXAMPLES)))
+@click.option(
+    '--interactive/--no-interactive', default=True,
+    help="Whether to display the generated plots.")
+@click.option(
+    '--samples', type=int, metavar='N',
+    default=50, show_default=True,
+    help="How many evaluations should be sampled.")
+@click.option(
+    '--logy', is_flag=True, default=False,
+    help="Log-transform the objective function.")
+@click.option(
+    '--noise', type=float, default=0.0, show_default=True,
+    help="Standard deviation of test function noise.")
+@click.option(
+    '--model', type=click.Choice(['gpr', 'knn']),
+    default='gpr', show_default=True,
+    help="The surrogate model implementation used for prediction. "
+         "gpr: Gaussian Process Regression. knn: k-Nearest Neighbor.")
+@click.option(
+    '--quiet', is_flag=True,
+    help="Don't display human-readable output during minimization.")
+@click.option(
+    '--seed', metavar='SEED', type=int,
+    default=7861, show_default=True,
+    help="Seed for reproducible runs.")
+@click.option(
+    '-s', '--strategy', 'strategies', metavar='STRATEGY', type=StrategyParam(),
+    multiple=True,
+    help="Which optimization strategy will be used. "
+         "Can be 'random', 'ggga', "
+         "or a YAML document describing the strategy.")
+@click.option(
+    '--csv', metavar='FILE', type=click.File('w'),
+    help="Write evaluation results to a CSV file. "
+         "Only use this when running a single strategy.")
+@click.option(
+    '--style', metavar='STYLE',
+    help="DualDependenceStyle for the plots.")
+def cli(
+    example_name, *,
+    interactive, samples, logy, noise, model, quiet,
+    seed, strategies, csv, style,
+):
+    """Run an EXAMPLE optimization benchmark function"""
 
     surrogate_model_class: t.Type[SurrogateModel]
-    if options.model == 'gpr':
+    if model == 'gpr':
         surrogate_model_class = SurrogateModelGPR
-    elif options.model == 'knn':
+    elif model == 'knn':
         surrogate_model_class = SurrogateModelKNN
     else:
-        raise ValueError(f"Unknown argument value: --model {options.model}")
+        raise ValueError(f"Unknown argument value: --model {model}")
 
-    strategies = options.strategies
     if not strategies:
         strategies = [RandomStrategy(), GGGAStrategy()]
 
-    example = EXAMPLES[options.example]
+    example = EXAMPLES[example_name]
 
-    if options.csv and len(strategies) > 1:
+    if csv and len(strategies) > 1:
         raise ValueError("--csv can only be used with a single strategy")
 
     strategy_cfg = StrategyConfiguration(
         space=example.space,
-        n_samples=options.samples,
+        n_samples=samples,
         surrogate_model_class=surrogate_model_class,
-        quiet=options.quiet,
-        csv_file=options.csv,
+        quiet=quiet,
+        csv_file=csv,
     )
 
     style = None
-    if options.style is not None:
-        style = DualDependenceStyle(**yaml.safe_load(options.style))
+    if style is not None:
+        style = DualDependenceStyle(**yaml.safe_load(style))
 
     loop = asyncio.get_event_loop()
     loop.run_until_complete(run_example_with_strategies(
-        options.example, example,
+        example_name, example,
         strategies=strategies,
         cfg=strategy_cfg,
-        rng_seed=options.seed,
-        log_y=options.log_y,
-        noise_level=options.noise,
-        render_plots=options.interactive,
+        rng_seed=seed,
+        log_y=logy,
+        noise_level=noise,
+        render_plots=interactive,
         style=style
     ))
 
-    if options.interactive:
+    if interactive:
         plt.show()
 
 
 if __name__ == '__main__':
-    main()
+    cli()
