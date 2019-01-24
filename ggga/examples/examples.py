@@ -1,3 +1,4 @@
+import inspect
 import typing as t
 
 import attr
@@ -10,11 +11,22 @@ from ..benchmark_functions import (
     trap)
 
 
+def _get_doc(fn: t.Callable) -> str:
+    rawdoc = inspect.getdoc(fn) or ""
+    lines = rawdoc.splitlines() or [""]
+    return lines[0]
+
+
 @attr.s
 class Example:
     function: t.Callable[..., float] = attr.ib()
     space: Space = attr.ib()
     minima: t.List[t.Tuple[list, float]] = attr.ib()
+    description: str = attr.ib(
+        default=attr.Factory(
+            lambda self: _get_doc(self.function),
+            takes_self=True)
+    )
 
     def make_objective(
         self, *,
@@ -65,6 +77,7 @@ EXAMPLES['goldstein-price'] = Example(
 # which assigns a low EI to unexplored regions.
 EXAMPLES['easom'] = Example(
     function=lambda x_1, x_2: easom(x_1, x_2, amplitude=100.0),
+    description=_get_doc(easom),
     space=Space(
         Real('x_1', -25, 25),
         Real('x_2', -25, 25),

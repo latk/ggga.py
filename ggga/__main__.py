@@ -140,97 +140,143 @@ class StrategyParam(click.ParamType):
         self.fail(f"Cannot find a strategy called {spec!r}", param, ctx)
 
 
-@click.command()
-@click.argument(
-    'example_name', type=click.Choice(sorted(EXAMPLES)))
-@click.option(
-    '--interactive/--no-interactive', default=True,
-    help="Whether to display the generated plots.")
-@click.option(
-    '--samples', type=int, metavar='N',
-    default=50, show_default=True,
-    help="How many evaluations should be sampled.")
-@click.option(
-    '--logy', is_flag=True, default=False,
-    help="Log-transform the objective function.")
-@click.option(
-    '--noise', type=float, default=0.0, show_default=True,
-    help="Standard deviation of test function noise.")
-@click.option(
-    '--model', type=click.Choice(['gpr', 'knn']),
-    default='gpr', show_default=True,
-    help="The surrogate model implementation used for prediction. "
-         "gpr: Gaussian Process Regression. knn: k-Nearest Neighbor.")
-@click.option(
-    '--quiet', is_flag=True,
-    help="Don't display human-readable output during minimization.")
-@click.option(
-    '--seed', metavar='SEED', type=int,
-    default=7861, show_default=True,
-    help="Seed for reproducible runs.")
-@click.option(
-    '-s', '--strategy', 'strategies', metavar='STRATEGY', type=StrategyParam(),
-    multiple=True,
-    help="Which optimization strategy will be used. "
-         "Can be 'random', 'ggga', "
-         "or a YAML document describing the strategy.")
-@click.option(
-    '--csv', metavar='FILE', type=click.File('w'),
-    help="Write evaluation results to a CSV file. "
-         "Only use this when running a single strategy.")
-@click.option(
-    '--style', metavar='STYLE',
-    help="DualDependenceStyle for the plots.")
-def cli(
-    example_name, *,
-    interactive, samples, logy, noise, model, quiet,
-    seed, strategies, csv, style,
-):
-    """Run an EXAMPLE optimization benchmark function"""
+def click_common_example_options(provide_defaults: bool = True):
 
-    surrogate_model_class: t.Type[SurrogateModel]
-    if model == 'gpr':
-        surrogate_model_class = SurrogateModelGPR
-    elif model == 'knn':
-        surrogate_model_class = SurrogateModelKNN
-    else:
-        raise ValueError(f"Unknown argument value: --model {model}")
+    def option(*args, default=None, show_default: bool = None, **kwargs):
 
-    if not strategies:
-        strategies = [RandomStrategy(), GGGAStrategy()]
+        if not provide_defaults:
+            show_default = False
+            default = None
 
-    example = EXAMPLES[example_name]
+        return click.option(
+                *args,
+                default=default,
+                show_default=(show_default or False),
+                **kwargs)
 
-    if csv and len(strategies) > 1:
-        raise ValueError("--csv can only be used with a single strategy")
+    common_options = [
+        option(
+            '--interactive/--no-interactive', default=True,
+            help="Whether to display the generated plots."),
+        option(
+            '--samples', type=int, metavar='N',
+            default=50, show_default=True,
+            help="How many evaluations should be sampled."),
+        option(
+            '--logy', is_flag=True, default=False,
+            help="Log-transform the objective function."),
+        option(
+            '--noise', type=float, default=0.0, show_default=True,
+            help="Standard deviation of test function noise."),
+        option(
+            '--model', type=click.Choice(['gpr', 'knn']),
+            default='gpr', show_default=True,
+            help="The surrogate model implementation used for prediction. "
+                 "gpr: Gaussian Process Regression. knn: k-Nearest Neighbor."),
+        option(
+            '--quiet', is_flag=True,
+            help="Don't display human-readable output during minimization."),
+        option(
+            '--seed', metavar='SEED', type=int,
+            default=7861, show_default=True,
+            help="Seed for reproducible runs."),
+        option(
+            '-s', '--strategy', 'strategies', metavar='STRATEGY',
+            type=StrategyParam(),
+            multiple=True,
+            help="Which optimization strategy will be used. "
+                 "Can be 'random', 'ggga', "
+                 "or a YAML document describing the strategy."),
+        option(
+            '--csv', metavar='FILE', type=click.File('w'),
+            help="Write evaluation results to a CSV file. "
+                 "Only use this when running a single strategy."),
+        option(
+            '--style', metavar='STYLE',
+            help="DualDependenceStyle for the plots.")
+    ]
 
-    strategy_cfg = StrategyConfiguration(
-        space=example.space,
-        n_samples=samples,
-        surrogate_model_class=surrogate_model_class,
-        quiet=quiet,
-        csv_file=csv,
-    )
+    def decorator(fn):
+        for opt in reversed(common_options):
+            fn = opt(fn)
 
-    style = None
-    if style is not None:
-        style = DualDependenceStyle(**yaml.safe_load(style))
+        return fn
 
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run_example_with_strategies(
-        example_name, example,
-        strategies=strategies,
-        cfg=strategy_cfg,
-        rng_seed=seed,
-        log_y=logy,
-        noise_level=noise,
-        render_plots=interactive,
-        style=style
-    ))
+    return decorator
 
-    if interactive:
-        plt.show()
+
+@click.group()
+@click_common_example_options(provide_defaults=True)
+@click.pass_context
+def cli(ctx, **kwargs):
+    """Run an example optimization benchmark function"""
+
+    ctx.obj.update(kwargs)
+
+
+for example_name in EXAMPLES:
+
+    @cli.command(example_name, help=EXAMPLES[example_name].description)
+    @click_common_example_options(provide_defaults=False)
+    @click.pass_context
+    def run_example(ctx, **kwargs):
+        obj = dict(ctx.obj)
+        obj.update((k, v) for k, v in kwargs.items() if v is not None)
+
+        csv: str = obj['csv']
+        example_name: str = ctx.command.name
+        interactive: bool = obj['interactive']
+        logy: bool = obj['logy']
+        model: str = obj['model']
+        noise: float = obj['noise']
+        samples: int = obj['samples']
+        seed: int = obj['seed']
+        strategies: t.List[Strategy] = obj['strategies']
+        style: DualDependenceStyle = obj['style']
+        quiet: bool = obj['quiet']
+
+        surrogate_model_class: t.Type[SurrogateModel]
+        if model == 'gpr':
+            surrogate_model_class = SurrogateModelGPR
+        elif model == 'knn':
+            surrogate_model_class = SurrogateModelKNN
+        else:
+            raise ValueError(f"Unknown argument value: --model {model}")
+
+        if not strategies:
+            strategies = [RandomStrategy(), GGGAStrategy()]
+
+        if csv and len(strategies) > 1:
+            raise ValueError("--csv can only be used with a single strategy")
+
+        if style is not None:
+            style = DualDependenceStyle(**yaml.safe_load(style))
+
+        example = EXAMPLES[example_name]
+
+        strategy_cfg = StrategyConfiguration(
+            space=example.space,
+            n_samples=samples,
+            surrogate_model_class=surrogate_model_class,
+            quiet=quiet,
+            csv_file=csv,
+        )
+
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(run_example_with_strategies(
+            example_name, example,
+            strategies=strategies,
+            cfg=strategy_cfg,
+            rng_seed=seed,
+            log_y=logy,
+            noise_level=noise,
+            render_plots=interactive,
+            style=style
+        ))
+
+        if interactive:
+            plt.show()
 
 
 if __name__ == '__main__':
-    cli()
+    cli(obj={})
