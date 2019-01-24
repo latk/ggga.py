@@ -1,4 +1,5 @@
 import asyncio
+import io
 import typing as t
 
 import click
@@ -13,7 +14,7 @@ from .visualization import PartialDependence, DualDependenceStyle
 from .util import yaml_constructor
 from .outputs import RecordCompletedEvaluations
 from .examples import (
-    Example, EXAMPLES,
+    EXAMPLES, Example, ExampleWithVariableDimensions,
     Strategy, StrategyConfiguration,
     RandomStrategy, GGGAStrategy, IraceStrategy
 )
@@ -140,6 +141,66 @@ class StrategyParam(click.ParamType):
         self.fail(f"Cannot find a strategy called {spec!r}", param, ctx)
 
 
+def run_example(
+    example_name: str, *,
+    csv: io.StringIO,
+    interactive: bool,
+    logy: bool,
+    model: str,
+    noise: float,
+    samples: int,
+    seed: int,
+    strategies: t.List[Strategy],
+    style: str,
+    quiet: bool,
+    dimensions: int = None,
+) -> None:
+
+    surrogate_model_class: t.Type[SurrogateModel]
+    if model == 'gpr':
+        surrogate_model_class = SurrogateModelGPR
+    elif model == 'knn':
+        surrogate_model_class = SurrogateModelKNN
+    else:
+        raise ValueError(f"Unknown argument value: --model {model}")
+
+    if not strategies:
+        strategies = [RandomStrategy(), GGGAStrategy()]
+
+    if csv and len(strategies) > 1:
+        raise ValueError("--csv can only be used with a single strategy")
+
+    if style is not None:
+        ddstyle = DualDependenceStyle(**yaml.safe_load(style))
+    else:
+        ddstyle = None
+
+    example = EXAMPLES[example_name].fix_dimension(dimensions)
+
+    strategy_cfg = StrategyConfiguration(
+        space=example.space,
+        n_samples=samples,
+        surrogate_model_class=surrogate_model_class,
+        quiet=quiet,
+        csv_file=csv,
+    )
+
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run_example_with_strategies(
+        example_name, example,
+        strategies=strategies,
+        cfg=strategy_cfg,
+        rng_seed=seed,
+        log_y=logy,
+        noise_level=noise,
+        render_plots=interactive,
+        style=ddstyle
+    ))
+
+    if interactive:
+        plt.show()
+
+
 def click_common_example_options(provide_defaults: bool = True):
 
     def option(*args, default=None, show_default: bool = None, **kwargs):
@@ -214,69 +275,27 @@ def cli(ctx, **kwargs):
     ctx.obj.update(kwargs)
 
 
-for example_name in EXAMPLES:
+for example_name, example in EXAMPLES.items():
+
+    if example.variable_dimension:
+        assert isinstance(example, ExampleWithVariableDimensions)
+        maybe_dim_option = click.option(
+            '--dimensions', '-D', type=int,
+            default=example.default_dimension,
+            show_default=(example.default_dimension is not None),
+            help="Number of parameters/dimensions.")
+    else:
+        def maybe_dim_option(fn):
+            return fn
 
     @cli.command(example_name, help=EXAMPLES[example_name].description)
     @click_common_example_options(provide_defaults=False)
+    @maybe_dim_option
     @click.pass_context
-    def run_example(ctx, **kwargs):
+    def run_example_wrapper(ctx, **kwargs):
         obj = dict(ctx.obj)
         obj.update((k, v) for k, v in kwargs.items() if v is not None)
-
-        csv: str = obj['csv']
-        example_name: str = ctx.command.name
-        interactive: bool = obj['interactive']
-        logy: bool = obj['logy']
-        model: str = obj['model']
-        noise: float = obj['noise']
-        samples: int = obj['samples']
-        seed: int = obj['seed']
-        strategies: t.List[Strategy] = obj['strategies']
-        style: DualDependenceStyle = obj['style']
-        quiet: bool = obj['quiet']
-
-        surrogate_model_class: t.Type[SurrogateModel]
-        if model == 'gpr':
-            surrogate_model_class = SurrogateModelGPR
-        elif model == 'knn':
-            surrogate_model_class = SurrogateModelKNN
-        else:
-            raise ValueError(f"Unknown argument value: --model {model}")
-
-        if not strategies:
-            strategies = [RandomStrategy(), GGGAStrategy()]
-
-        if csv and len(strategies) > 1:
-            raise ValueError("--csv can only be used with a single strategy")
-
-        if style is not None:
-            style = DualDependenceStyle(**yaml.safe_load(style))
-
-        example = EXAMPLES[example_name]
-
-        strategy_cfg = StrategyConfiguration(
-            space=example.space,
-            n_samples=samples,
-            surrogate_model_class=surrogate_model_class,
-            quiet=quiet,
-            csv_file=csv,
-        )
-
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(run_example_with_strategies(
-            example_name, example,
-            strategies=strategies,
-            cfg=strategy_cfg,
-            rng_seed=seed,
-            log_y=logy,
-            noise_level=noise,
-            render_plots=interactive,
-            style=style
-        ))
-
-        if interactive:
-            plt.show()
-
+        return run_example(ctx.command.name, **obj)
 
 if __name__ == '__main__':
     cli(obj={})

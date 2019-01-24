@@ -19,6 +19,7 @@ def _get_doc(fn: t.Callable) -> str:
 
 @attr.s
 class Example:
+    variable_dimension: bool = False
     function: t.Callable[..., float] = attr.ib()
     space: Space = attr.ib()
     minima: t.List[t.Tuple[list, float]] = attr.ib()
@@ -27,6 +28,13 @@ class Example:
             lambda self: _get_doc(self.function),
             takes_self=True)
     )
+
+    def fix_dimension(self, n_dim: t.Optional[int]) -> 'Example':
+        if n_dim is not None:
+            raise TypeError(
+                "dimension of Example cannot be changed afterwards")
+
+        return self
 
     def make_objective(
         self, *,
@@ -57,7 +65,33 @@ class Example:
         return objective
 
 
-EXAMPLES: t.Dict[str, Example] = {}
+@attr.s
+class ExampleWithVariableDimensions:
+    variable_dimension: bool = True
+    function: t.Callable[..., float] = attr.ib()
+    make_space: t.Callable[[int], Space] = attr.ib()
+    make_mimima: t.Callable[[int], t.List[t.Tuple[list, float]]] = attr.ib()
+    default_dimension: t.Optional[int] = attr.ib()
+    description: str = attr.ib(
+        default=attr.Factory(
+            lambda self: _get_doc(self.function),
+            takes_self=True))
+
+    def fix_dimension(self, n_dim: t.Optional[int]) -> Example:
+        if n_dim is None or n_dim < 1:
+            raise ValueError(
+                f"at least one dimension is required, "
+                f"but got n_dim = {n_dim}")
+
+        return Example(
+            function=self.function,
+            space=self.make_space(n_dim),
+            minima=self.make_mimima(n_dim),
+            description=self.description,
+        )
+
+
+EXAMPLES: t.Dict[str, t.Union[Example, ExampleWithVariableDimensions]] = {}
 
 EXAMPLES['goldstein-price'] = Example(
     function=goldstein_price,
@@ -101,111 +135,57 @@ EXAMPLES['himmelblau'] = Example(
     ],
 )
 
-EXAMPLES['rastrigin2'] = Example(
+EXAMPLES['rastrigin'] = ExampleWithVariableDimensions(
     function=rastrigin,
-    space=Space(
-        Real('x_1', -5.12, 5.12),
-        Real('x_2', -5.12, 5.12),
+    default_dimension=2,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', -5.12, 5.12) for x in range(1, n_dim + 1)],
     ),
-    minima=[([0.0]*2, 0.0)],
+    make_mimima=lambda n_dim: [([0.0]*n_dim, 0.0)],
 )
 
-EXAMPLES['rastrigin6'] = Example(
-    function=rastrigin,
-    space=Space(
-        Real('x_1', -5.12, 5.12),
-        Real('x_2', -5.12, 5.12),
-        Real('x_3', -5.12, 5.12),
-        Real('x_4', -5.12, 5.12),
-        Real('x_5', -5.12, 5.12),
-        Real('x_6', -5.12, 5.12),
-    ),
-    minima=[([0.0]*6, 0.0)],
-)
-
-EXAMPLES['rosenbrock2'] = Example(
+EXAMPLES['rosenbrock'] = ExampleWithVariableDimensions(
     function=rosenbrock,
-    space=Space(
-        Real('x_1', -5.12, 5.12),
-        Real('x_2', -5.12, 5.12),
+    default_dimension=2,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', -5.12, 5.12) for x in range(1, n_dim + 1)],
     ),
-    minima=[([1.0]*2, 0.0)],
+    make_mimima=lambda n_dim: [([1.0]*n_dim, 0.0)],
 )
 
-EXAMPLES['rosenbrock6'] = Example(
-    function=rosenbrock,
-    space=Space(
-        Real('x_1', -5.12, 5.12),
-        Real('x_2', -5.12, 5.12),
-        Real('x_3', -5.12, 5.12),
-        Real('x_4', -5.12, 5.12),
-        Real('x_5', -5.12, 5.12),
-        Real('x_6', -5.12, 5.12),
-    ),
-    minima=[([1.0]*6, 0.0)],
-)
-
-EXAMPLES['sphere2'] = Example(
+EXAMPLES['sphere'] = ExampleWithVariableDimensions(
     function=sphere,
-    space=Space(
-        Real('x_1', -2.0, 2.0),
-        Real('x_2', -2.0, 2.0),
+    default_dimension=2,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', -2.0, 2.0) for x in range(1, n_dim + 1)]
     ),
-    minima=[([0.0]*2, 0.0)],
+    make_mimima=lambda n_dim: [([0.0]*n_dim, 0.0)],
 )
 
-EXAMPLES['sphere6'] = Example(
-    function=sphere,
-    space=Space(
-        Real('x_1', -2.0, 2.0),
-        Real('x_2', -2.0, 2.0),
-        Real('x_3', -2.0, 2.0),
-        Real('x_4', -2.0, 2.0),
-        Real('x_5', -2.0, 2.0),
-        Real('x_6', -2.0, 2.0),
-    ),
-    minima=[([0.0]*6, 0.0)],
-)
-
-EXAMPLES['onemax4'] = Example(
+EXAMPLES['onemax'] = ExampleWithVariableDimensions(
     function=onemax,
-    space=Space(
-        Real('x_1', 0.0, 1.0),
-        Real('x_2', 0.0, 1.0),
-        Real('x_3', 0.0, 1.0),
-        Real('x_4', 0.0, 1.0),
+    default_dimension=4,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', 0.0, 1.0) for x in range(1, n_dim + 1)],
     ),
-    minima=[([0.0]*4, 0.0)],
+    make_mimima=lambda n_dim: [([0.0]*n_dim, 0.0)],
 )
 
-EXAMPLES['onemax4log'] = Example(
+EXAMPLES['onemax-log'] = ExampleWithVariableDimensions(
     function=onemax,
-    space=Space(
-        Real('x_1', 0.0, 1.0, scale=Log1pScale(2)),
-        Real('x_2', 0.0, 1.0, scale=Log1pScale(2)),
-        Real('x_3', 0.0, 1.0, scale=Log1pScale(2)),
-        Real('x_4', 0.0, 1.0, scale=Log1pScale(2)),
+    default_dimension=4,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', 0.0, 1.0, scale=Log1pScale(2))
+            for x in range(1, n_dim + 1)],
     ),
-    minima=[([0.0]*4, 0.0)],
+    make_mimima=lambda n_dim: [([0.0]*n_dim, 0.0)],
 )
 
-EXAMPLES['trap2'] = Example(
+EXAMPLES['trap'] = ExampleWithVariableDimensions(
     function=trap,
-    space=Space(
-        Real('x_1', -1.0, 1.0),
-        Real('x_2', -1.0, 1.0),
+    default_dimension=2,
+    make_space=lambda n_dim: Space(
+        *[Real(f'x_{x}', -1.0, 1.0) for x in range(1, n_dim + 1)],
     ),
-    minima=[([0.0]*2, 0.0)],
-)
-
-
-EXAMPLES['trap4'] = Example(
-    function=trap,
-    space=Space(
-        Real('x_1', -1.0, 1.0),
-        Real('x_2', -1.0, 1.0),
-        Real('x_3', -1.0, 1.0),
-        Real('x_4', -1.0, 1.0),
-    ),
-    minima=[([0.0]*4, 0.0)],
+    make_mimima=lambda n_dim: [([0.0]*n_dim, 0.0)],
 )

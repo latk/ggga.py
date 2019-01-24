@@ -32,11 +32,12 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) goldstein-price --logy
 	time $(GGGA_EXAMPLE) easom
 	time $(GGGA_EXAMPLE) himmelblau
-	time $(GGGA_EXAMPLE) rastrigin2
-	time $(GGGA_EXAMPLE) rosenbrock2 --logy --samples 80
-	time $(GGGA_EXAMPLE) sphere2 --samples 80
-	time $(GGGA_EXAMPLE) sphere2 --samples 80 --noise 1.5
-	time $(GGGA_EXAMPLE) onemax4log --samples 80
+	time $(GGGA_EXAMPLE) rastrigin
+	time $(GGGA_EXAMPLE) rosenbrock --logy --samples 80
+	time $(GGGA_EXAMPLE) rosenbrock -D3 --logy --samples 80
+	time $(GGGA_EXAMPLE) sphere --samples 80
+	time $(GGGA_EXAMPLE) sphere --samples 80 --noise 1.5
+	time $(GGGA_EXAMPLE) onemax-log --samples 80
 
 README_example.png: SHELL = bash
 README_example.png: README.md
