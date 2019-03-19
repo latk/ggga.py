@@ -1,4 +1,4 @@
-.PHONY: all qa test lint install-dev examples-no-interactive
+.PHONY: all qa test lint install-dev examples-no-interactive doc
 
 PYTHON ?= python
 
@@ -24,6 +24,7 @@ lint:
 
 install-dev:
 	$(PIP) install -e .[dev]
+	$(PIP) install -r ./doc/requirements.txt
 
 examples-no-interactive: GGGA_EXAMPLE += --quiet --no-interactive
 examples-no-interactive:
@@ -39,6 +40,10 @@ examples-no-interactive:
 	time $(GGGA_EXAMPLE) sphere --samples 80 --noise 1.5
 	time $(GGGA_EXAMPLE) onemax-log --samples 80
 
+doc: $(glob doc/source/*) ./README.rst ./README_example.png
+	@ test -d ./doc/build || mkdir ./doc/build
+	sphinx-build -b html -Wan --keep-going ./doc/source ./doc/build
+
 README_example.png: SHELL = bash
-README_example.png: README.md
+README_example.png: README.rst
 	$(PYTHON) <(awk '/^```/ {if (found){nextfile}; found=!found; next} found {print}' $<)

@@ -1,3 +1,5 @@
+.. begin contents
+
 ggga
 ====
 
@@ -57,7 +59,7 @@ Synopsis
        .plot_grid(res.xs, res.ys)
    fig.savefig("README_example.png")
 
-.. image:: ./README_example.png
+|synopsis image|
 
 The visualization shows all samples
 and the response surface of a Gaussian Process Regression
@@ -542,3 +544,7 @@ Copyright 2018 Lukas Atkinson
 
 GGGA is licensed under the terms of the AGPLv3+,
 see the LICENSE.txt for details.
+
+.. end contents
+
+.. |synopsis image| image:: ./README_example.png
