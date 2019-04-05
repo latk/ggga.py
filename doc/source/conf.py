@@ -42,6 +42,11 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.doctest',
     'sphinx_click.ext',
+    'sphinx.ext.napoleon',
+    'sphinx_autodoc_typehints',
+    'sphinx.ext.intersphinx',
+    'sphinxcontrib_trio',
+    'sphinx.ext.autosummary',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -176,4 +181,25 @@ epub_title = project
 epub_exclude_files = ['search.html']
 
 
-# -- Extension configuration -------------------------------------------------
+# -- Extension configuration ------------------------------------------------
+
+# autodoc
+autodoc_default_options = {
+    'members': None,
+    'member-order': 'groupwise',
+}
+
+# napoleon
+napoleon_use_ivar = True
+
+# intersphinx
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'numpy': ('http://docs.scipy.org/doc/numpy/', None),
+}
+
+# nitpick (built-in)
+nitpick_ignore = []
+nitpick_ignore.append(('py:class', 'optional'))  # often used in parameters
+nitpick_ignore.append(('py:class', 'typing.Optional'))  # sometimes fails
+nitpick_ignore.append(('py:class', 'typing.Tuple'))  # sometimes fails

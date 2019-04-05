@@ -229,6 +229,16 @@ BoundSuggestionFunction = t.Callable[[Sample], dict]
 
 
 class Space:
+    """Represents the parameter space inside which optimization is performed.
+
+    Parameters
+    ----------
+    *params: Real or Integer
+        The parameters that make up the space.
+
+        .. class:: Real(name, lo, hi)
+        .. class:: Integer(name, lo, hi, *, scale?)
+    """
 
     def __init__(
         self, *params: Param,

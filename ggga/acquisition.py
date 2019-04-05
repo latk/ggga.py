@@ -16,6 +16,19 @@ IterableIndividuals = t.Iterable[Individual]
 
 
 class AcquisitionStrategy(abc.ABC):
+    """A strategy to acquire new samples.
+
+    Implementations:
+
+    .. autosummary::
+
+        ChainedAcquisition
+        HedgedAcquisition
+        RandomReplacementAcquisition
+        MutationAcquisition
+        RandomWalkAcquisition
+        GradientAcquisition
+    """
     @abc.abstractmethod
     def acquire(
         self, population: IterableIndividuals, *,
@@ -25,10 +38,16 @@ class AcquisitionStrategy(abc.ABC):
         fmin: float,
         space: Space,
     ) -> t.Iterator[Individual]:
+        """ """
         pass
 
 
 class ChainedAcquisition(AcquisitionStrategy):
+    """Perform multi-stage acquisition.
+
+    Each stage operates on the results of the previous stage.
+    """
+
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
         self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
@@ -61,6 +80,8 @@ class ChainedAcquisition(AcquisitionStrategy):
 
 
 class HedgedAcquisition(AcquisitionStrategy):
+    """Randomly assign parent individuals to a sub-strategy."""
+
     def __init__(self, *strategies: AcquisitionStrategy) -> None:
         self.strategies: t.Iterable[AcquisitionStrategy] = strategies
 
@@ -95,7 +116,7 @@ class HedgedAcquisition(AcquisitionStrategy):
 
 @attr.s
 class RandomReplacementAcquisition(AcquisitionStrategy):
-    """Randomly replace bad individuals.
+    """Replace bad individuals with random samples.
 
     This is not suitable as a primary acquisition strategy.
 
@@ -206,6 +227,9 @@ class RandomReplacementAcquisition(AcquisitionStrategy):
 
 @attr.s
 class MutationAcquisition(AcquisitionStrategy):
+    """Randomly mutate each parent to create new samples in their neighborhood.
+    """
+
     breadth: int = attr.ib()
     breadth.validator(Validator.is_posint)  # type: ignore
 
@@ -286,6 +310,8 @@ class RandomWalkAcquisition(AcquisitionStrategy):
 
 @attr.s
 class GradientAcquisition(AcquisitionStrategy):
+    """Use gradient optimization to find optimal samples."""
+
     breadth: int = attr.ib()
     breadth.validator(Validator.is_posint)  # type: ignore
 

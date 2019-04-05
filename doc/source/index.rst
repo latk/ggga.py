@@ -13,6 +13,7 @@ Contents
 
    Overview <self>
    man
+   api
 
 
 

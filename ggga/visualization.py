@@ -18,6 +18,46 @@ def _default_progress_cb(_param_1: str, _param_2: t.Optional[str]) -> None:
 
 @attr.s(frozen=True, auto_attribs=True)
 class DualDependenceStyle:
+    """Control the appearance of the parameter interaction visualization.
+
+    The interaction (contour) plot has four layers
+    that can be configured separately:
+
+    -   filled contour plot: :meth:`get_contour_filled_args`
+    -   contour lines: :meth:`get_contour_line_args`
+    -   scatter plot of all samples: :meth:`get_scatter_args`
+    -   “scatter” plot of the best sample: :meth:`get_xmin_scatter_args`
+
+    Parameters
+    ----------
+    cmap
+        The colour map used for the filled contour plot.
+        Defaults to 'viridis_r'.
+    contour_args
+        Extra arguments for the contour plot (both filled and lines).
+    contour_filled
+        Whether filled contours are drawn.
+        Either this or *countour_lines* should be True.
+        Defaults to True.
+    contour_filled_args
+        Extra arguments for the filled contour plot, overrides *contour_args*.
+    contour_levels
+        Defaults to 10.
+    contour_lines
+        Whether contour lines are drawn.
+        Either this or *contour_filled* should be True.
+    contour_lines_args
+        Extra arguments the line contour plot, overrides *contour_args*.
+    contour_scatter_args
+        Extra arguments for the scatter plot of all samples.
+    xmin_scatter_args
+        Extra arguments to override the scatter plot appearance
+        of the best point.
+    subplot_size
+        How large each plot in the grid of all parameters should be.
+        The whole figure will have size (*n_params* × *subplot_size*)².
+    """
+
     cmap: str = 'viridis_r'
     contour_args: t.Optional[dict] = None
     contour_filled: bool = True
@@ -32,6 +72,12 @@ class DualDependenceStyle:
     xmin_scatter_args: t.Optional[dict] = None
 
     def get_contour_filled_args(self) -> dict:
+        """Filled contour plot arguments.
+
+        1. locator: None, cmap: *cmap*, alpha: 0.8
+        2. *contour_args*
+        3. *contour_filled_args*
+        """
         return _merge_dicts(
             dict(locator=None, cmap=self.cmap, alpha=0.8),
             self.contour_args,
@@ -39,6 +85,12 @@ class DualDependenceStyle:
         )
 
     def get_contour_line_args(self) -> dict:
+        """Contour line plot arguments.
+
+        1. locator: None, colors: 'k', linewidths: 1
+        2. *contour_args*
+        3. *contour_lines_args*
+        """
         return _merge_dicts(
             dict(locator=None, colors='k', linewidths=1),
             self.contour_args,
@@ -46,12 +98,23 @@ class DualDependenceStyle:
         )
 
     def get_scatter_args(self) -> dict:
+        """Scatter plot arguments.
+
+        1. c: 'k', s: 10, lw: 0
+        2. *scatter_args*
+        """
         return _merge_dicts(
             dict(c='k', s=10, lw=0),
             self.scatter_args,
         )
 
     def get_xmin_scatter_args(self) -> dict:
+        """“Scatter” plot of the best sample arguments.
+
+        1. :meth:`get_scatter_args`
+        2. c: 'r'
+        3. *xmin_scatter_args*
+        """
         return _merge_dicts(
             self.get_scatter_args(),
             dict(c='r'),
@@ -60,6 +123,22 @@ class DualDependenceStyle:
 
 
 class PartialDependence:
+    """Visualize and analyze individual contributions of each parameter.
+
+    Parameters
+    ----------
+    model
+    space
+    rng
+    resolution
+        How many samples are used along one parameter.
+        Default: 20.
+    quality
+        How many samples are used along all other parameters
+        to get a precise estimate of the average value.
+        Default: 250.
+    """
+
     def __init__(
         self, *,
         model: SurrogateModel,
@@ -79,6 +158,22 @@ class PartialDependence:
     def along_one_dimension(
         self, dim: int,
     ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Calculate contributions along one dimension.
+
+        Returns
+        -------
+        xs
+            Sample locations along this dimension.
+        ys_mean
+            Mean response at the samples.
+        ys_min
+            Minimal/optimal response at the samples.
+        ys_mean_std
+            Mean model uncertainty.
+        ys_min_std
+            Model uncertainty at the minimum.
+        """
+
         samples_transformed = np.array(self._samples_transformed)
         xs_transformed = np.linspace(0.0, 1.0, self._resolution)
 
@@ -108,6 +203,18 @@ class PartialDependence:
     def along_two_dimensions(
         self, dim_1: int, dim_2: int,
     ) -> t.Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Calculate contributions along two dimensions.
+
+        Returns
+        -------
+        xs_1
+            Sample locations along *dim_1*
+        xs_2
+            Sample locations along *dim_2*.
+        ys
+            Mean response at the samples.
+        """
+
         samples_transformed = np.array(self._samples_transformed)
         xs_transformed = np.linspace(0.0, 1.0, self._resolution)
 
@@ -125,11 +232,31 @@ class PartialDependence:
         return xs_1, xs_2, ys
 
     def plot_grid(
-        self, x_observed, y_observed, *,
+        self, x_observed: np.ndarray, y_observed: np.ndarray, *,
         x_min=None,
         style: DualDependenceStyle = None,
         progress_cb: ProgressCB = _default_progress_cb,
     ) -> t.Tuple[t.Any, t.Any]:
+        """Plot a visualization of parameter influences.
+
+        Parameters
+        ----------
+        x_observed
+        y_observed
+        x_min: list or None
+            Location of the best sample.
+            Defaults to the sample that minimizes *y_observed*.
+        style
+        progress_cb: ``(dim_1_name, dim_2_name?) -> None``
+            Called prior to rendering each sub-plot
+            with the names of the parameters in the sub-plot.
+            The *dim_2_name* is only provided for interaction plots.
+
+        Returns
+        -------
+        (fig, axes): tuple
+            The plotted figure.
+        """
 
         n_dims = self.space.n_dims
 

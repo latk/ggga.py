@@ -2,6 +2,16 @@ import numpy as np  # type: ignore
 
 
 class Individual:
+    """Parameters and result of a pending or completed experiment.
+
+    Many fields are write-once.
+
+    Parameters
+    ----------
+    sample: list
+        The input variables at which the experiment shall be evaluated.
+    """
+
     def __init__(
         self, sample: list, *,
         observation: float = None,
@@ -44,6 +54,7 @@ class Individual:
 
     @property
     def observation(self) -> float:
+        """The observed value. Write-once."""
         assert self._observation is not None
         return self._observation
 
@@ -54,6 +65,7 @@ class Individual:
 
     @property
     def cost(self) -> float:
+        """The observed cost. Write-once."""
         assert self._cost is not None
         return self._cost
 
@@ -64,6 +76,7 @@ class Individual:
 
     @property
     def gen(self) -> int:
+        """The generation in which the Individual was evaluated. Write-once."""
         assert self._gen is not None
         return self._gen
 
@@ -74,6 +87,9 @@ class Individual:
 
     @property
     def expected_improvement(self) -> float:
+        """The expected improvement before the Individual was evaluated.
+        Write-once.
+        """
         assert self._expected_improvement is not None
         return self._expected_improvement
 
@@ -84,6 +100,7 @@ class Individual:
 
     @property
     def prediction(self) -> float:
+        """The predicted value. Write-once."""
         assert self._prediction is not None
         return self._prediction
 
@@ -93,6 +110,8 @@ class Individual:
         self._prediction = value
 
     def is_fully_initialized(self) -> bool:
+        """Check whether all write-once fields have been provided.
+        If true, the object is immutable."""
         return all(field is not None for field in (
             self._cost,
             self._expected_improvement,

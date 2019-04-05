@@ -24,6 +24,8 @@ ObjectiveFunction = t.Callable[
 
 
 class OptimizationResult:
+    """Results of one optimization run (multiple experiments)."""
+
     best_individual: Individual
 
     def __init__(
@@ -34,50 +36,85 @@ class OptimizationResult:
     ) -> None:
         assert all(ind.is_fully_initialized() for ind in all_individuals)
 
+        #: list[Individual]: all results
         self.all_individuals = all_individuals
+        #: Individual: best result
         self.best_individual = min(
             all_individuals, key=lambda ind: ind.observation)
+        #: list[SurrogateModel]: all models
         self.all_models = all_models
+        #: float: total duration
         self.duration = duration
 
     def best_n(self, how_many: int) -> t.List[Individual]:
+        """Select the best evaluation results."""
         sorted_individuals = sorted(
             self.all_individuals, key=lambda ind: ind.observation)
         return sorted_individuals[:how_many]
 
     @property
     def model(self) -> SurrogateModel:
+        """Final model."""
         return self.all_models[-1]
 
     @property
     def xs(self) -> np.ndarray:
+        """Input variables of all evaluations."""
         return np.array([ind.sample for ind in self.all_individuals])
 
     @property
     def ys(self) -> np.ndarray:
+        """Output variables of all evaluations."""
         return np.array([ind.observation for ind in self.all_individuals])
 
     @property
     def fmin(self) -> float:
+        """Best observed value."""
         return self.best_individual.observation
 
 
 @attr.s(frozen=True, cmp=False, auto_attribs=True)
 class Minimizer:
-    r"""
-    Attributes
+    """Configure the GGGA optimizer.
+
+    Parameters
     ----------
-    popsize : int
-    max_nevals : int
-    relscale_initial : float
-    relscale_attenuation : float
-    surrogate_model_class : Type[SurrogateModel]
-    surrogate_model_args : dict
-    acquisition_strategy : AcquisitionStrategy, optional
-    time_source : TimeSource
-    select_via_posterior: bool
-    fmin_via_posterior: bool
-    n_replacements: int
+    popsize: int, optional
+        How many samples are taken per generation.
+        Defaults to 10.
+    max_nevals: int, optional
+        How many samples may be taken in total per optimization run.
+        Defaults to 100.
+    relscale_initial: float, optional
+        Standard deviation for creating new samples,
+        as percentage of each paramter's range.
+        Defaults to 0.3.
+    relscale_attenuation: float, optional
+        Factor by which the relscale is reduced per generation.
+        Defaults to 0.9.
+    surrogate_model_class: type[SurrogateModel], optional
+        The regression model to fit the response surface.
+        Defaults to :class:`~ggga.gpr.SurrogateModelGPR`.
+    surrogate_model_args: dict, optional
+        Extra arguments for the surrogate model.
+    acquisition_strategy: AcquisitionStrategy or None, optional
+        How new samples are acquired.
+        Defaults to :class:`~ggga.acquisition.MutationAcquisition`
+        with breadth=10.
+    select_via_posterior: bool, optional
+        Whether the model prediction should be used as a fitness function
+        when selecting which samples proceed to the next generation.
+        If false, the objective's observed value incl. noise is used.
+        Defaults to False.
+    fmin_via_posterior: bool, optional
+        Whether the model prediction is used
+        to find the current best point during optimization.
+        If false, the objective's observed value incl. noise is used.
+        Defaults to True.
+    n_replacements: int, optional
+        How many random samples are suggested per generation.
+        Usually, new samples are created by random mutations
+        of existing samples.
     """
 
     popsize: int = 10
@@ -109,6 +146,7 @@ class Minimizer:
         fmin_via_posterior: bool = None,
         n_replacements: int = None,
     ) -> 'Minimizer':
+        """Clone a Minimizer but override some attributes."""
 
         TValue = t.TypeVar('TValue')
 
@@ -143,6 +181,24 @@ class Minimizer:
         rng: RandomState,
         outputs: OutputEventHandler = None,
     ) -> OptimizationResult:
+        """Minimize the objective.
+
+        Parameters
+        ----------
+        objective: ``async objective(sample, rng) -> (value, cost)``)
+            A function to calculate the objective value.
+            The *sample* is a list
+            with the same order as the params in the space.
+            The *value* and *cost* are floats.
+            The cost is merely informative.
+        space:
+            The parameter space inside which the objective is optimized.
+        rng:
+        outputs:
+            Controls what information is printed during optimization.
+            Can e.g. be used to save evaluations into a CSV file.
+            Defaults to :class:`~ggga.outputs.Output`.
+        """
 
         acquisition_strategy = self.acquisition_strategy
         if acquisition_strategy is None:

@@ -50,26 +50,32 @@ class IndividualsToTable:
 
 
 class OutputEventHandler:
-    r"""Interface: Event handlers as the optimization progresses."""
+    r"""Report progress and save results during optimization process.
+    (interface)
+    """
 
     def event_new_generation(
         self, gen: int, *, relscale: t.Tuple[float],
     ) -> None:
+        """ """
         pass
 
     def event_evaluations_completed(
         self, individuals: t.Iterable[Individual], *, duration: float,
     ) -> None:
+        """ """
         pass
 
     def event_model_trained(
         self, generation: int, model: SurrogateModel, *, duration: float,
     ) -> None:
+        """ """
         pass
 
     def event_acquisition_completed(
         self, *, duration: float,
     ) -> None:
+        """ """
         pass
 
 
@@ -225,18 +231,20 @@ class RecordCompletedEvaluations(OutputEventHandler):
 class Output(CompositeOutputEventHandler):
     r"""
     Control the output during optimization.
+    Default implementation of :class:`OutputEventHandler`.
 
-    Attributes:
-        space (Space):
-            The parameter space.
-        evaluation_csv_file (TextIO, optional):
-            If present, all evaluations are recorded in this file.
-        model_file (TextIO, optional):
-            If present, metadata of the models is recorded in this file,
-            using a JSON-per-line format.
-        log_file (TextIO, optional):
-            Where to write human-readable output. Defaults to sys.stdout.
-            If set to None, output is suppressed.
+    Parameters
+    ----------
+    space : Space
+        The parameter space.
+    evaluation_csv_file : typing.TextIO, optional
+        If present, all evaluations are recorded in this file.
+    model_file : typing.TextIO, optional
+        If present, metadata of the models is recorded in this file,
+        using a JSON-per-line format.
+    log_file : typing.TextIO, optional
+        Where to write human-readable output. Defaults to sys.stdout.
+        If set to None, output is suppressed.
     """
 
     def __init__(
@@ -266,8 +274,11 @@ class Output(CompositeOutputEventHandler):
 
         # durations
         self.acquisition_durations: t.List[float] = []
+        """list[float]: time spent per acquisition"""
         self.evaluation_durations: t.List[float] = []
+        """list[float]: time spent per evaluation"""
         self.training_durations: t.List[float] = []
+        """list[float]: time spent per training/fitting"""
 
     def event_evaluations_completed(
         self, individuals: t.Iterable[Individual], *,
