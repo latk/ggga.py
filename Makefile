@@ -47,4 +47,4 @@ doc: $(glob doc/source/*) ./README.rst ./README_example.png
 README_example.png: SHELL = bash
 README_example.png: README.rst
 	@ mkdir -p ./doc/source/_static
-	$(PYTHON) <(awk '/^```/ {if (found){nextfile}; found=!found; next} found {print}' $<)
+	$(PYTHON) <(awk '/^\.\. (code:: python|end code)$$/ {if (found){nextfile}; found=!found; next} found {gsub(/^[ ]{3}/, ""); print}' $<)

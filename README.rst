@@ -59,6 +59,8 @@ Synopsis
        .plot_grid(res.xs, res.ys)
    fig.savefig("README_example.png")
 
+.. end code
+
 |synopsis image|
 
 The visualization shows all samples
