@@ -79,7 +79,7 @@ async def run_example_with_strategies(  # pylint: disable=too-many-locals
             continue
 
         fig, _ = PartialDependence(model=model, space=example.space, rng=rng) \
-            .plot_grid(xs, ys, style=style)
+            .plot_grid(xs, ys, dual_style=style)
         figtitle = example_name.title()
         fig.suptitle(f"{figtitle} ({cfg.n_samples} {strategy.name} samples)")
         figs.append(fig)

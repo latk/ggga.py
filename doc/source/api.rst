@@ -79,6 +79,11 @@ DualDependenceStyle
 
 .. autoclass:: ggga.visualization.DualDependenceStyle
 
+SingleDependenceStyle
+---------------------
+
+.. autoclass:: ggga.visualization.SingleDependenceStyle
+
 benchmark_functions
 -------------------
 

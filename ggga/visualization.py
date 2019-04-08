@@ -53,9 +53,6 @@ class DualDependenceStyle:
     xmin_scatter_args
         Extra arguments to override the scatter plot appearance
         of the best point.
-    subplot_size
-        How large each plot in the grid of all parameters should be.
-        The whole figure will have size (*n_params* × *subplot_size*)².
     """
 
     cmap: str = 'viridis_r'
@@ -67,7 +64,6 @@ class DualDependenceStyle:
     contour_lines_args: t.Optional[dict] = None
     contour_scatter_args: t.Optional[dict] = None
     contour_xmin_scatter_args: t.Optional[dict] = None
-    subplot_size: float = 2
     scatter_args: t.Optional[dict] = None
     xmin_scatter_args: t.Optional[dict] = None
 
@@ -120,6 +116,32 @@ class DualDependenceStyle:
             dict(c='r'),
             self.xmin_scatter_args,
         )
+
+
+@attr.s(frozen=True, auto_attribs=True)
+class SingleDependenceStyle:
+    """Control the appearance of the single dependence plot.
+
+    This style be provided separately for the mean and optimal responses.
+
+    Arguments
+    ---------
+    color
+        Color for the response line/region.
+    show
+        Whether the response shall be shown.
+    show_err
+        Whether the uncertainty around the response shall be shown.
+    err_alpha
+        Alpha value for uncertainty region shading.
+    args
+        Extra arguments for the response line.
+    """
+    color: str
+    show: bool = True
+    show_err: bool = True
+    err_alpha: float = 0.15
+    args: dict = dict()
 
 
 class PartialDependence:
@@ -234,7 +256,10 @@ class PartialDependence:
     def plot_grid(
         self, x_observed: np.ndarray, y_observed: np.ndarray, *,
         x_min=None,
-        style: DualDependenceStyle = None,
+        dual_style: DualDependenceStyle = None,
+        single_mean_style: SingleDependenceStyle = None,
+        single_min_style: SingleDependenceStyle = None,
+        subplot_size: float = 2,
         progress_cb: ProgressCB = _default_progress_cb,
     ) -> t.Tuple[t.Any, t.Any]:
         """Plot a visualization of parameter influences.
@@ -246,7 +271,12 @@ class PartialDependence:
         x_min: list or None
             Location of the best sample.
             Defaults to the sample that minimizes *y_observed*.
-        style
+        dual_style
+        single_mean_style
+        single_min_style
+        subplot_size
+            How large each plot in the grid of all parameters should be.
+            The whole figure will have size (*n_params* × *subplot_size*)².
         progress_cb: ``(dim_1_name, dim_2_name?) -> None``
             Called prior to rendering each sub-plot
             with the names of the parameters in the sub-plot.
@@ -260,16 +290,19 @@ class PartialDependence:
 
         n_dims = self.space.n_dims
 
-        if style is None:
-            style = DualDependenceStyle()
-        assert style is not None  # for type checker
+        if dual_style is None:
+            dual_style = DualDependenceStyle()
+        if single_mean_style is None:
+            single_mean_style = SingleDependenceStyle('b')
+        if single_min_style is None:
+            single_min_style = SingleDependenceStyle('r')
 
         if x_min is None:
             x_min = x_observed[np.argmin(y_observed)]
 
         fig, axes = plt.subplots(
             n_dims, n_dims,
-            figsize=(style.subplot_size * n_dims, style.subplot_size * n_dims),
+            figsize=(subplot_size * n_dims, subplot_size * n_dims),
             squeeze=False)
 
         for row in range(n_dims):
@@ -284,6 +317,8 @@ class PartialDependence:
                 y_observed=y_observed,
                 x_observed_min=x_min,
                 partial_dependence=self,
+                min_style=single_min_style,
+                mean_style=single_mean_style,
             )
 
             ax.set_title(param_row.name + "\n")
@@ -300,7 +335,7 @@ class PartialDependence:
                     ax, col, row,
                     partial_dependence=self,
                     x_observed=x_observed, x_observed_min=x_min,
-                    style=style,
+                    style=dual_style,
                 )
 
                 if row != n_dims - 1:
@@ -325,37 +360,38 @@ def plot_single_variable_dependence(
     ax, dim, *,
     x_observed, y_observed, x_observed_min,
     partial_dependence: PartialDependence,
-    scatter_args=dict(c='g', s=10, lw=0, alpha=0.5),
-    minline_args=dict(linestyle='--', color='r', lw=1),
-    show_mean: bool = True, show_mean_err: bool = True,
-    show_min: bool = True, show_min_err: bool = True,
-    cmean: str = 'b',
-    cmin: str = 'r',
-    mean_args: dict = dict(),
-    min_args: dict = dict(),
+    mean_style: SingleDependenceStyle,
+    min_style: SingleDependenceStyle,
+    err_stds: float = 2,
+    scatter_args: dict = None,
+    minline_args: dict = None,
 ) -> None:
+
+    scatter_args = _merge_dicts(
+        dict(c='g', s=10, lw=0, alpha=0.5),
+        scatter_args)
+
+    minline_args = _merge_dicts(
+            dict(linestyle='--', color='r', lw=1),
+            minline_args)
 
     xs, ys_mean, ys_min, ys_mean_std, ys_min_std = \
         partial_dependence.along_one_dimension(dim)
 
     ax.scatter([x[dim] for x in x_observed], y_observed, **scatter_args)
 
-    if show_mean and show_mean_err:
-        ax.fill_between(
-            xs,
-            ys_mean - 2*ys_mean_std,
-            ys_mean + 2*ys_mean_std,
-            color=cmean, alpha=0.15)
-    if show_min and show_min_err:
-        ax.fill_between(
-            xs,
-            ys_min - 2*ys_min_std,
-            ys_min + 2*ys_min_std,
-            color=cmin, alpha=0.15)
-    if show_mean:
-        ax.plot(xs, ys_mean, c=cmean, **mean_args)
-    if show_min:
-        ax.plot(xs, ys_min, c=cmin, **min_args)
+    for style, ys, ys_std in [(mean_style, ys_mean, ys_mean_std),
+                              (min_style, ys_min, ys_min_std)]:
+        if style.show and style.show_err:
+            ax.fill_between(
+                xs,
+                ys - err_stds * ys_std,
+                ys + err_stds * ys_std,
+                color=style.color, alpha=style.err_alpha)
+
+    for style, ys in [(mean_style, ys_mean), (min_style, ys_min)]:
+        if style.show:
+            ax.plot(xs, ys, c=style.color, **style.args)
 
     if x_observed_min is not None:
         ax.axvline(x_observed_min[dim], **minline_args)
