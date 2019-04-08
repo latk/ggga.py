@@ -38,8 +38,27 @@ class AcquisitionStrategy(abc.ABC):
         fmin: float,
         space: Space,
     ) -> t.Iterator[Individual]:
-        """ """
-        pass
+        """Acquire new individuals.
+
+        Arguments
+        ---------
+        population
+            Previous population/parents.
+        model
+            Current model of the utility landscape.
+        relscale
+            suggested normalized standard deviation for mutating individuals.
+        fmin
+            Current best observed value (useful for EI)
+        space
+        rng
+
+        Returns
+        -------
+        typing.Iterable[Individual]
+            A finite sequence of individuals
+            that may be selected for evaluation.
+        """
 
 
 class ChainedAcquisition(AcquisitionStrategy):

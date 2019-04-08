@@ -57,26 +57,22 @@ class OutputEventHandler:
     def event_new_generation(
         self, gen: int, *, relscale: t.Tuple[float],
     ) -> None:
-        """ """
-        pass
+        """Called when a new generation is started."""
 
     def event_evaluations_completed(
         self, individuals: t.Iterable[Individual], *, duration: float,
     ) -> None:
-        """ """
-        pass
+        """Called when evaluations of a generation have completed."""
 
     def event_model_trained(
         self, generation: int, model: SurrogateModel, *, duration: float,
     ) -> None:
-        """ """
-        pass
+        """Called when a new model has been trained."""
 
     def event_acquisition_completed(
         self, *, duration: float,
     ) -> None:
-        """ """
-        pass
+        """Called when new samples have been acquired."""
 
 
 class CompositeOutputEventHandler(OutputEventHandler):

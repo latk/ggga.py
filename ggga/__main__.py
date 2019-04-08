@@ -298,4 +298,4 @@ for example_name, example in EXAMPLES.items():
         return run_example(ctx.command.name, **obj)
 
 if __name__ == '__main__':
-    cli(obj={})
+    cli(obj={})  # pylint: disable=no-value-for-parameter; weird click magic

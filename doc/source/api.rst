@@ -47,11 +47,17 @@ AcquisitionStrategy
 -------------------
 .. autoclass:: ggga.acquisition.AcquisitionStrategy
 .. autoclass:: ggga.acquisition.ChainedAcquisition
+   :no-members:
 .. autoclass:: ggga.acquisition.HedgedAcquisition
+   :no-members:
 .. autoclass:: ggga.acquisition.RandomReplacementAcquisition
+   :no-members:
 .. autoclass:: ggga.acquisition.MutationAcquisition
+   :no-members:
 .. autoclass:: ggga.acquisition.RandomWalkAcquisition
+   :no-members:
 .. autoclass:: ggga.acquisition.GradientAcquisition
+   :no-members:
 
 OutputEventHandler
 ------------------
