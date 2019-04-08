@@ -48,6 +48,27 @@ class IndividualsToTable:
         yield cost
         yield from sample
 
+    def row_to_individual(
+            self, row: t.Iterable[str], gen: int = None,
+    ) -> Individual:
+        row = list(row)
+        assert len(row) == len(self.columns)
+
+        (original_gen, observation, prediction,
+         expected_improvement, cost, *sample) = row
+
+        if gen is None:
+            gen = int(original_gen)
+
+        return Individual(
+            [float(x) for x in sample],
+            observation=float(observation),
+            gen=gen,
+            expected_improvement=float(expected_improvement),
+            prediction=float(prediction),
+            cost=float(cost),
+        )
+
 
 class OutputEventHandler:
     r"""Report progress and save results during optimization process.
@@ -195,6 +216,16 @@ class RecordCompletedEvaluations(OutputEventHandler):
         cls, csv_file: t.TextIO, *, space: Space,
     ) -> 'RecordCompletedEvaluations':
         return cls(csv_file, individuals_table=IndividualsToTable(space))
+
+    @staticmethod
+    def load_individuals(
+            csv_file: t.TextIO, *,
+            space: Space,
+            gen: int = None,
+    ) -> t.Iterable[Individual]:
+        table = IndividualsToTable(space)
+        for row in csv.reader(csv_file):
+            yield table.row_to_individual(row, gen=gen)
 
     def write_result(
         self, *,
