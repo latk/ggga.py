@@ -82,6 +82,10 @@ class Minimizer:
     popsize: int, optional
         How many samples are taken per generation.
         Defaults to 10.
+    initial: int, optional
+        How many initial samples should be acquired
+        before model-guided acquisition takes over.
+        Default: 10.
     max_nevals: int, optional
         How many samples may be taken in total per optimization run.
         Defaults to 100.
@@ -118,6 +122,7 @@ class Minimizer:
     """
 
     popsize: int = 10
+    initial: int = 10
     max_nevals: int = 100
     relscale_initial: float = 0.3
     relscale_attenuation: float = 0.9
@@ -130,11 +135,14 @@ class Minimizer:
     n_replacements: int = 1
 
     def __attrs_post_init__(self)-> None:
-        assert self.popsize < self.max_nevals
+        assert self.initial + self.popsize <= self.max_nevals, \
+            f"evaluation budget {self.max_nevals} to small" \
+            f"with {self.initial}+n*{self.popsize} evaluations"
 
     def with_setting(
         self, *,
         popsize: int = None,
+        initial: int = None,
         max_nevals: int = None,
         relscale_initial: float = None,
         relscale_attenuation: float = None,
@@ -157,6 +165,7 @@ class Minimizer:
 
         return Minimizer(
             popsize=default(popsize, self.popsize),
+            initial=default(initial, self.initial),
             max_nevals=default(max_nevals, self.max_nevals),
             relscale_initial=default(relscale_initial, self.relscale_initial),
             relscale_attenuation=default(
@@ -180,6 +189,7 @@ class Minimizer:
         space: Space,
         rng: RandomState,
         outputs: OutputEventHandler = None,
+        historic_individuals: t.Iterable[Individual] = (),
     ) -> OptimizationResult:
         """Minimize the objective.
 
@@ -191,13 +201,21 @@ class Minimizer:
             with the same order as the params in the space.
             The *value* and *cost* are floats.
             The cost is merely informative.
-        space:
+        space
             The parameter space inside which the objective is optimized.
-        rng:
-        outputs:
+        rng
+        outputs
             Controls what information is printed during optimization.
             Can e.g. be used to save evaluations into a CSV file.
             Defaults to :class:`~ggga.outputs.Output`.
+        historic_individuals
+            Previous evaluations of the same objective/space
+            that should be incorporated into the model.
+            Can be useful in order to benefit from previous minimization runs.
+            Potential drawbacks include a biased model,
+            and that the tuner slows down with additional samples.
+            Constraints: all individual must be fully initialized,
+            and declare the -1th generation.
         """
 
         acquisition_strategy = self.acquisition_strategy
@@ -209,6 +227,9 @@ class Minimizer:
             outputs = Output(space=space)
         assert outputs is not None
 
+        assert all(ind.is_fully_initialized() for ind in historic_individuals)
+        assert all(ind.gen == -1 for ind in historic_individuals)
+
         instance = _MinimizationInstance(
             config=self,
             objective=objective,
@@ -217,7 +238,9 @@ class Minimizer:
             acquisition_strategy=acquisition_strategy,
         )
 
-        return await instance.run(rng=rng)
+        return await instance.run(
+            rng=rng,
+            historic_individuals=historic_individuals)
 
 
 @attr.s(frozen=True, cmp=False, auto_attribs=True)
@@ -228,21 +251,29 @@ class _MinimizationInstance:
     outputs: OutputEventHandler = attr.ib()
     acquisition_strategy: AcquisitionStrategy = attr.ib()
 
-    async def run(self, *, rng: RandomState) -> OptimizationResult:
+    async def run(
+            self, *,
+            rng: RandomState,
+            historic_individuals: t.Iterable[Individual],
+    ) -> OptimizationResult:
         config: Minimizer = self.config
 
         total_duration = timer(config.time_source)
 
         population = self._make_initial_population(rng=rng)
 
-        all_evaluations = []
+        budget = config.max_nevals
+        all_evaluations: t.List[Individual] = []
         all_models = []
+
+        all_evaluations.extend(historic_individuals)
 
         for ind in population:
             ind.prediction = 0
             ind.expected_improvement = 0.0
 
         await self._evaluate_all(population, gen=0, rng=rng)
+        budget -= len(population)
         all_evaluations.extend(population)
 
         model = self._fit_next_model(
@@ -260,8 +291,10 @@ class _MinimizationInstance:
         fmin: float = find_fmin(all_evaluations, model=model)
 
         generation = 0
-        while len(all_evaluations) < config.max_nevals:
+        while budget > 0:
             generation += 1
+            population = self._resize_population(
+                population, min(budget, config.popsize), model=model, rng=rng)
             relscale_bound = self._relscale_at_gen(generation)
             relscale = np.clip(model.length_scales(), None, relscale_bound)
 
@@ -274,6 +307,7 @@ class _MinimizationInstance:
                 population, model=model, rng=rng, fmin=fmin, relscale=relscale)
 
             await self._evaluate_all(offspring, rng=rng, gen=generation)
+            budget -= len(offspring)
             all_evaluations.extend(offspring)
 
             model = self._fit_next_model(
@@ -295,7 +329,7 @@ class _MinimizationInstance:
     ) -> t.List[Individual]:
         return [
             Individual(self.space.sample(rng=rng))
-            for _ in range(self.config.popsize)
+            for _ in range(self.config.initial)
         ]
 
     @staticmethod
@@ -393,6 +427,28 @@ class _MinimizationInstance:
             population=selected,
             replacement_pool=rejected)
 
+        return population
+
+    def _resize_population(
+            self, population: t.List[Individual], newsize: int, *,
+            model: SurrogateModel,
+            rng: RandomState,
+    ) -> t.List[Individual]:
+        # Sort the individuals.
+        fitness_operator = self._make_fitness_operator(
+            with_posterior=self.config.select_via_posterior, model=model)
+        population = sorted(population, key=fitness_operator)
+
+        # If there are too many individuals, remove worst-ranking individuals.
+        if len(population) > newsize:
+            return population[:newsize]
+
+        # If there are too few individuals, repeat individuals.
+        # It might be better to pad with random choices, but these individuals
+        # must be fully evaluated.
+        pool = list(population)
+        while len(population) < newsize:
+            population.append(pool[rng.randint(len(pool))])
         return population
 
 

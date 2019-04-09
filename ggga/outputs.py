@@ -203,19 +203,26 @@ class WriteHumanReadableOutput(OutputEventHandler):
 
 class RecordCompletedEvaluations(OutputEventHandler):
     def __init__(
-        self, csv_file: t.TextIO, *, individuals_table: IndividualsToTable,
+        self, csv_file: t.TextIO, *,
+        individuals_table: IndividualsToTable,
+        write_header: bool = True,
     ) -> None:
         assert hasattr(csv_file, 'write'), \
             f"Evaluation CSV file must be a writable file object: {csv_file!r}"
         self._csv_writer = csv.writer(csv_file)
-        self._csv_writer.writerow(individuals_table.columns)
         self._individuals_table = individuals_table
+        if write_header:
+            self._csv_writer.writerow(individuals_table.columns)
 
     @classmethod
     def new(
-        cls, csv_file: t.TextIO, *, space: Space,
+        cls, csv_file: t.TextIO, *, space: Space, write_header: bool = True,
     ) -> 'RecordCompletedEvaluations':
-        return cls(csv_file, individuals_table=IndividualsToTable(space))
+        return cls(
+            csv_file,
+            individuals_table=IndividualsToTable(space),
+            write_header=write_header,
+        )
 
     @staticmethod
     def load_individuals(
@@ -224,7 +231,9 @@ class RecordCompletedEvaluations(OutputEventHandler):
             gen: int = None,
     ) -> t.Iterable[Individual]:
         table = IndividualsToTable(space)
-        for row in csv.reader(csv_file):
+        reader = csv.reader(csv_file)
+        next(reader, None)  # skip header
+        for row in reader:
             yield table.row_to_individual(row, gen=gen)
 
     def write_result(
