@@ -14,6 +14,7 @@ def parse_requirements(filename):
 
 setup(
     name='ggga',
+    version='0.1.0',
     python='>=3.6',
     install_requires=parse_requirements('./requirements.txt'),
     extras_require={
